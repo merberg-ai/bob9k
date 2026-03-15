@@ -42,6 +42,34 @@
 </section>
 
 <section class='card'>
+  <h3>Network Configuration</h3>
+  <p class='muted'>Manage Wi-Fi connection for the system. This saves the profile so it connects on boot.</p>
+  <div class='status-grid'>
+    <div>
+      <span>Status</span>
+      <strong id='network-status-text'>Checking...</strong>
+    </div>
+    <div>
+      <span>IP Address</span>
+      <strong id='network-ip-text'>---</strong>
+    </div>
+    <div style="grid-column: 1 / -1; display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+      <div style="display: flex; gap: 0.5rem; flex: 1; align-items: center;">
+        <select id='network-ssid-select' style="flex: 1;">
+          <option value="">-- Scan for Networks --</option>
+        </select>
+        <button id='network-scan-btn' class='btn'>Scan</button>
+      </div>
+      <div style="display: flex; gap: 0.5rem; flex: 1; align-items: center;">
+        <input type='password' id='network-password-input' placeholder='Wi-Fi Password' style="flex: 1;">
+        <button id='network-connect-btn' class='btn btn-primary'>Connect</button>
+      </div>
+    </div>
+  </div>
+  <p id='network-message' class='muted'></p>
+</section>
+
+<section class='card'>
   <h3>Camera Tuning</h3>
   <p class='muted'>Preview uses the live rover camera feed. Saving camera settings will always restart the camera so the new values fully stick instead of pretending they did.</p>
   <img

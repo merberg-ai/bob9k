@@ -22,5 +22,8 @@ window.bob9kApi={
   cameraPanLeft:async()=> (await fetch('/api/camera/pan_left',{method:'POST'})).json(),
   cameraPanRight:async()=> (await fetch('/api/camera/pan_right',{method:'POST'})).json(),
   cameraTiltUp:async()=> (await fetch('/api/camera/tilt_up',{method:'POST'})).json(),
-  cameraTiltDown:async()=> (await fetch('/api/camera/tilt_down',{method:'POST'})).json()
+  cameraTiltDown:async()=> (await fetch('/api/camera/tilt_down',{method:'POST'})).json(),
+  getNetworkStatus:async()=> (await fetch('/api/network/status')).json(),
+  scanNetworks:async()=> (await fetch('/api/network/scan')).json(),
+  connectNetwork:async(ssid,password)=> (await fetch('/api/network/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid,password})})).json()
 };

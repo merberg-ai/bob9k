@@ -138,10 +138,93 @@ async function resetCameraSettings(){
   }
 }
 
+async function loadNetworkStatus(){
+  if(document.body.dataset.page!=='settings') return;
+  const statusTxt = document.getElementById('network-status-text');
+  const ipTxt = document.getElementById('network-ip-text');
+  try{
+    const data = await window.bob9kApi.getNetworkStatus();
+    if(statusTxt) statusTxt.textContent = data.connected ? `Connected to ${data.ssid}` : 'Disconnected';
+    if(ipTxt) ipTxt.textContent = data.ip || '---';
+  }catch(err){
+    if(statusTxt) statusTxt.textContent = 'Error checking status';
+  }
+}
+
+async function scanNetworks(){
+  const btn = document.getElementById('network-scan-btn');
+  const sel = document.getElementById('network-ssid-select');
+  if(!btn || !sel) return;
+  
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  sel.innerHTML = '<option value="">-- Scanning --</option>';
+  
+  try{
+    const data = await window.bob9kApi.scanNetworks();
+    sel.innerHTML = '<option value="">-- Select a Network --</option>';
+    if(data.networks && data.networks.length > 0) {
+      data.networks.forEach(net => {
+        const opt = document.createElement('option');
+        opt.value = net.ssid;
+        opt.textContent = `${net.ssid} (${net.signal}%${net.security ? ' - ' + net.security : ''})`;
+        sel.appendChild(opt);
+      });
+    } else {
+      sel.innerHTML = '<option value="">-- No Networks Found --</option>';
+    }
+  }catch(err){
+    sel.innerHTML = '<option value="">-- Error Scanning --</option>';
+    setActionMessage('Failed to scan networks.', 'error');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Scan';
+  }
+}
+
+async function connectNetwork(){
+  const sel = document.getElementById('network-ssid-select');
+  const pwd = document.getElementById('network-password-input');
+  const btn = document.getElementById('network-connect-btn');
+  const msg = document.getElementById('network-message');
+  
+  if(!sel || !pwd || !btn) return;
+  const ssid = sel.value;
+  if(!ssid) {
+    if(msg) msg.textContent = 'Please select a network first.';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = 'Connecting...';
+  if(msg) msg.textContent = `Attempting to connect to ${ssid}... this may take a moment.`;
+  setActionMessage(`Connecting to ${ssid}...`, 'info');
+  
+  try{
+    const data = await window.bob9kApi.connectNetwork(ssid, pwd.value);
+    if(data.ok) {
+        if(msg) msg.textContent = 'Successfully connected. Validating IP address...';
+        setActionMessage(`Connected to ${ssid}!`, 'success');
+        pwd.value = '';
+    } else {
+        if(msg) msg.textContent = `Connection failed: ${data.error || 'Unknown error'}`;
+        setActionMessage('Connection failed.', 'error');
+    }
+  }catch(err){
+    if(msg) msg.textContent = 'Error connecting to network.';
+    setActionMessage('Connection error.', 'error');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+    setTimeout(loadNetworkStatus, 3000);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
   if(document.body.dataset.page!=='settings') return;
   loadServoTrimSettings();
   loadCameraSettings();
+  loadNetworkStatus();
 
   document.querySelectorAll('[data-trim-target]').forEach(btn=>{
     btn.addEventListener('click', ()=> adjustTrimInput(btn.dataset.trimTarget, parseInt(btn.dataset.delta || '0', 10)));
@@ -169,4 +252,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   const homeBtn = document.getElementById('test-camera-home');
   if(homeBtn) homeBtn.addEventListener('click', async()=>{ await window.bob9kApi.cameraHome(); await refreshStatus(); });
+  
+  const scanBtn = document.getElementById('network-scan-btn');
+  if(scanBtn) scanBtn.addEventListener('click', scanNetworks);
+  
+  const connectBtn = document.getElementById('network-connect-btn');
+  if(connectBtn) connectBtn.addEventListener('click', connectNetwork);
 });
