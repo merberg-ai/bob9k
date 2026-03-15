@@ -192,7 +192,16 @@ class GamepadService:
         return out
 
     def _normalize_trigger(self, axis_name: str, value: int) -> float:
-        minimum, maximum, _ = self.axis_info.get(axis_name, (0, 1023, 0))
+        minimum, maximum, flat = self.axis_info.get(axis_name, (0, 1023, 0))
+        
+        # Windows BT Xbox controllers often report triggers as full -32768 to 32767 axes
+        # resting at ~32767 or exactly in the middle. We must detect and rely on the same stick logic.
+        if minimum < 0:
+            val = self._normalize_stick(axis_name, value)
+            # Triggers only care about the "pressed" direction. If resting at 32767, pulling decreases it.
+            # Convert the -1 to 1 range into a 0 to 1 magnitude throttle.
+            return abs(val)
+
         if maximum <= minimum:
             return 0.0
         out = (float(value) - float(minimum)) / float(maximum - minimum)

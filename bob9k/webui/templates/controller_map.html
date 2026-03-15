@@ -169,7 +169,10 @@
     const status = await fetchStatus();
     if (!status.connected || !status.axis_state) return;
     const currentState = status.axis_state;
-    const dbgStr = Object.entries(currentState).filter(([,v]) => Math.abs(v) > 500).map(([k,v]) => `${k}:${v}`).join(' | ');
+    const dbgStr = Object.entries(currentState).filter(([k,v]) => {
+      const base = baselineState[k] || 0;
+      return Math.abs(v - base) > 2000;
+    }).map(([k,v]) => `${k}:${v}`).join(' | ');
     document.getElementById('live-input-debug').textContent = dbgStr || 'No active inputs...';
 
     let detected = null;
@@ -180,8 +183,7 @@
       const isAxis = knownAxes.includes(key) || key.startsWith('ABS_');
       let ok = false;
       if (isBtn && diff >= 1 && val === 1) ok = true;
-      else if (isAxis && diff > 100 && (key === 'ABS_Z' || key === 'ABS_RZ')) ok = true;
-      else if (isAxis && diff > 8000 && key !== 'ABS_Z' && key !== 'ABS_RZ') ok = true;
+      else if (isAxis && diff > 8000) ok = true;
       else if (isAxis && diff > 200 && key.includes('HAT')) ok = true;
       if (!ok) continue;
       if (expectedType === 'button' && isAxis) continue;
