@@ -38,12 +38,21 @@ class GamepadService:
         'steering': 'ABS_X',            # Left Stick X
         'pan': 'ABS_RX',                # Right Stick X
         'tilt': 'ABS_RY',               # Right Stick Y
+        'pan_left': None,
+        'pan_right': None,
+        'tilt_up': None,
+        'tilt_down': None,
         'estop': 'BTN_B',
         'clear_estop': 'BTN_A',
         'lights_on': 'BTN_TR',          # Right bumper
         'lights_off': 'BTN_TL',         # Left bumper
         'camera_home': 'BTN_THUMBR',    # Right stick click
-        'steering_center': 'BTN_THUMBL' # Left stick click
+        'steering_center': 'BTN_THUMBL',# Left stick click
+        'x_btn': None,
+        'y_btn': None,
+        'select': None,
+        'start': None,
+        'guide': None
     }
 
     KEY_ALIASES = {
@@ -53,14 +62,19 @@ class GamepadService:
         'BTN_Y': 'BTN_WEST',  'BTN_WEST': 'BTN_Y',
         'BTN_TR2': 'BTN_TR',  'BTN_TR': 'BTN_TR2',
         'BTN_TL2': 'BTN_TL',  'BTN_TL': 'BTN_TL2',
+        'BTN_SELECT': 'BTN_BACK', 'BTN_BACK': 'BTN_SELECT',
+        'BTN_START': 'BTN_MODE', 'BTN_MODE': 'BTN_START',
+        'BTN_GUIDE': 'BTN_HOME', 'BTN_HOME': 'BTN_GUIDE',
     }
 
     def __init__(self, runtime, logger):
         self.runtime = runtime
         self.logger = logger
         self._thread = None
+        self._btn_thread = None
         self._stop_event = threading.Event()
         self.device: Optional[evdev.InputDevice] = None
+        self._btn_held = set()
 
         cfg = self.runtime.config
         self.mapping = cfg.get('gamepad_mapping', self.DEFAULT_MAPPING.copy())
@@ -93,12 +107,16 @@ class GamepadService:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._connection_loop, name='bob9k-gamepad', daemon=True)
         self._thread.start()
+        self._btn_thread = threading.Thread(target=self._button_hold_loop, name='bob9k-gamepad-btns', daemon=True)
+        self._btn_thread.start()
         self.logger.info("Gamepad background service started.")
 
     def stop(self):
         self._stop_event.set()
         if self._thread:
             self._thread = None
+        if self._btn_thread:
+            self._btn_thread = None
         if self.device:
             try:
                 self.device.close()
@@ -201,7 +219,9 @@ class GamepadService:
             if event.type == evdev.ecodes.EV_KEY:
                 key_event = evdev.categorize(event)
                 if key_event.keystate == key_event.key_down:
-                    self._handle_button(key_event.keycode)
+                    self._handle_button(key_event.keycode, is_down=True)
+                elif key_event.keystate == key_event.key_up:
+                    self._handle_button(key_event.keycode, is_down=False)
 
             elif event.type == evdev.ecodes.EV_ABS:
                 abs_code = evdev.ecodes.ABS[event.code]
@@ -209,7 +229,7 @@ class GamepadService:
                     self.axis_state[abs_code] = event.value
                     self._process_axes()
 
-    def _handle_button(self, keycode):
+    def _handle_button(self, keycode, is_down: bool):
         if not self.runtime or not self.runtime.registry:
             return
 
@@ -220,7 +240,20 @@ class GamepadService:
             mapped_key = m.get(action_name)
             if not mapped_key:
                 return False
+            if isinstance(keycode, list):
+                return mapped_key in keycode or self.KEY_ALIASES.get(mapped_key) in keycode
             return keycode == mapped_key or keycode == self.KEY_ALIASES.get(mapped_key)
+
+        holdable = ['pan_left', 'pan_right', 'tilt_up', 'tilt_down']
+        for act in holdable:
+            if is_mapped(act):
+                if is_down:
+                    self._btn_held.add(act)
+                else:
+                    self._btn_held.discard(act)
+
+        if not is_down:
+            return
 
         if is_mapped('clear_estop'):
             if reg.motors.estop_latched:
@@ -250,6 +283,46 @@ class GamepadService:
             if reg.steering:
                 reg.steering.center()
                 self._steer_target = reg.steering.angle
+
+        elif is_mapped('x_btn'):
+            self.logger.info("Gamepad: X button pressed")
+        elif is_mapped('y_btn'):
+            self.logger.info("Gamepad: Y button pressed")
+        elif is_mapped('select'):
+            self.logger.info("Gamepad: Select/Back button pressed")
+        elif is_mapped('start'):
+            self.logger.info("Gamepad: Start button pressed")
+        elif is_mapped('guide'):
+            self.logger.info("Gamepad: Guide/Home button pressed")
+
+    def _button_hold_loop(self):
+        while not self._stop_event.is_set():
+            if self._btn_held and getattr(self, 'runtime', None) and self.runtime.registry:
+                reg = self.runtime.registry
+                moved = False
+                if reg.camera_servo:
+                    if 'pan_left' in self._btn_held:
+                        reg.camera_servo.pan_left()
+                        self._pan_target = reg.camera_servo.pan_angle
+                        moved = True
+                    elif 'pan_right' in self._btn_held:
+                        reg.camera_servo.pan_right()
+                        self._pan_target = reg.camera_servo.pan_angle
+                        moved = True
+                    
+                    if 'tilt_up' in self._btn_held:
+                        reg.camera_servo.tilt_up()
+                        self._tilt_target = reg.camera_servo.tilt_angle
+                        moved = True
+                    elif 'tilt_down' in self._btn_held:
+                        reg.camera_servo.tilt_down()
+                        self._tilt_target = reg.camera_servo.tilt_angle
+                        moved = True
+                        
+                if moved:
+                    self.last_servo_update = time.monotonic()
+            
+            time.sleep(self.servo_update_rate_s)
 
     def _set_motor_state(self, command: str, speed: int = 0) -> None:
         reg = self.runtime.registry

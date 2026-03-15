@@ -45,17 +45,30 @@
 
 <script>
   const mappingConfig = [
-    { id: 'throttle_fwd', label: 'Drive Forward', type: 'axis' },
-    { id: 'throttle_rev', label: 'Drive Reverse (Brake)', type: 'axis' },
-    { id: 'steering', label: 'Steering Left/Right', type: 'axis' },
-    { id: 'pan', label: 'Camera Pan', type: 'axis' },
-    { id: 'tilt', label: 'Camera Tilt', type: 'axis' },
-    { id: 'lights_on', label: 'Headlights On', type: 'button' },
-    { id: 'lights_off', label: 'Headlights Off', type: 'button' },
-    { id: 'estop', label: 'Apply E-Stop', type: 'button' },
-    { id: 'clear_estop', label: 'Clear E-Stop', type: 'button' },
-    { id: 'steering_center', label: 'Center Steering', type: 'button' },
-    { id: 'camera_home', label: 'Center Camera', type: 'button' }
+    { id: 'throttle_fwd', label: 'Drive Forward', type: 'axis', group: 'Drive' },
+    { id: 'throttle_rev', label: 'Drive Reverse (Brake)', type: 'axis', group: 'Drive' },
+    { id: 'steering', label: 'Steering Left/Right', type: 'axis', group: 'Drive' },
+    { id: 'steering_center', label: 'Center Steering', type: 'button', group: 'Drive' },
+
+    { id: 'pan', label: 'Camera Pan (Axis)', type: 'axis', group: 'Camera' },
+    { id: 'tilt', label: 'Camera Tilt (Axis)', type: 'axis', group: 'Camera' },
+    { id: 'pan_left', label: 'Pan Left', type: 'button', group: 'Camera' },
+    { id: 'pan_right', label: 'Pan Right', type: 'button', group: 'Camera' },
+    { id: 'tilt_up', label: 'Tilt Up', type: 'button', group: 'Camera' },
+    { id: 'tilt_down', label: 'Tilt Down', type: 'button', group: 'Camera' },
+    { id: 'camera_home', label: 'Center Camera', type: 'button', group: 'Camera' },
+
+    { id: 'lights_on', label: 'Headlights On', type: 'button', group: 'Lights' },
+    { id: 'lights_off', label: 'Headlights Off', type: 'button', group: 'Lights' },
+
+    { id: 'estop', label: 'Apply E-Stop', type: 'button', group: 'Safety' },
+    { id: 'clear_estop', label: 'Clear E-Stop', type: 'button', group: 'Safety' },
+
+    { id: 'x_btn', label: 'X Button', type: 'button', group: 'Actions' },
+    { id: 'y_btn', label: 'Y Button', type: 'button', group: 'Actions' },
+    { id: 'select', label: 'Select / Back', type: 'button', group: 'Actions' },
+    { id: 'start', label: 'Start', type: 'button', group: 'Actions' },
+    { id: 'guide', label: 'Guide / Home', type: 'button', group: 'Actions' }
   ];
 
   const knownAxes = ['ABS_X', 'ABS_Y', 'ABS_Z', 'ABS_RX', 'ABS_RY', 'ABS_RZ', 'ABS_HAT0X', 'ABS_HAT0Y'];
@@ -111,7 +124,12 @@
     const container = document.getElementById('mapping-fields');
     if (!container) return;
     let html = '';
+    let currentGroup = '';
     mappingConfig.forEach(item => {
+      if (item.group && item.group !== currentGroup) {
+        currentGroup = item.group;
+        html += `<div style="font-weight:700; color:var(--text); margin-top:16px; margin-bottom:4px; font-size:0.95rem; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; letter-spacing:0.04em;">${currentGroup}</div>`;
+      }
       const val = currentMapping[item.id] || 'Unassigned';
       const isAxis = item.type === 'axis';
       const isAssigned = val !== 'Unassigned';
