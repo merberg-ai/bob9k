@@ -1,72 +1,68 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="card mb-4" id="debug-status-card">
-            <div class="card-header d-flex justify-content-between">
-                <span>CONTROLLER DEBUG MENU</span>
-                <span id="conn-badge" class="badge bg-secondary">DISCONNECTED</span>
-            </div>
-            <div class="card-body">
-                <p class="text-secondary small mb-3">
-                    Live raw axis values and servo targeting from the <code>GamepadService</code>.
-                </p>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <strong class="text-muted d-block mb-2">RAW AXIS STATE</strong>
-                        <div class="bg-dark rounded p-3" style="border: 1px solid var(--border-color); height: 250px; overflow-y: auto;">
-                            <pre id="axis-out" class="font-monospace small mb-0" style="color: #00ffcc;">Awaiting data...</pre>
-                        </div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <strong class="text-muted d-block mb-2">SERVICE STATE</strong>
-                        <div class="bg-dark rounded p-3" style="border: 1px solid var(--border-color); height: 250px; overflow-y: auto;">
-                            <pre id="svc-out" class="font-monospace small mb-0" style="color: #ffcc00;">Awaiting data...</pre>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+<div style="display:flex; flex-direction:column; gap:14px;">
+
+  <div class="card" id="debug-status-card">
+    <div class="card-header">
+      <span>Controller Debug</span>
+      <span id="conn-badge" class="status-pill" style="color:var(--muted); border-color:rgba(255,255,255,0.12);">DISCONNECTED</span>
     </div>
+    <p class="muted" style="margin:0 0 14px; font-size:0.85rem;">
+      Live raw axis values and servo targets from the <code>GamepadService</code>. Updates at 10Hz when connected.
+    </p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div>
+        <div style="font-size:0.7rem; color:var(--accent); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px;">Raw Axis State</div>
+        <div style="background:rgba(0,0,0,0.4); border:1px solid var(--border); border-radius:10px; height:240px; overflow-y:auto; padding:12px;">
+          <pre id="axis-out" style="font-family:monospace; font-size:0.78rem; color:var(--accent); margin:0; white-space:pre-wrap;">Awaiting data...</pre>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem; color:#ffb347; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px;">Service State</div>
+        <div style="background:rgba(0,0,0,0.4); border:1px solid var(--border); border-radius:10px; height:240px; overflow-y:auto; padding:12px;">
+          <pre id="svc-out" style="font-family:monospace; font-size:0.78rem; color:#ffb347; margin:0; white-space:pre-wrap;">Awaiting data...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:10px;">
+    <a href="/controller/map" style="flex:1; display:block; padding:12px; border:1px solid var(--accent); border-radius:10px; text-align:center; color:var(--accent); font-weight:700; font-size:0.82rem; letter-spacing:0.08em;">Configure Mapping</a>
+    <a href="/controller" style="flex:1; display:block; padding:12px; border:1px solid var(--border); border-radius:10px; text-align:center; color:var(--muted); font-weight:700; font-size:0.82rem; letter-spacing:0.08em;">Back to Controller</a>
+  </div>
+
 </div>
 
 <script>
-    async function pollDebug() {
-        try {
-            const res = await fetch('/api/bluetooth/debug');
-            const data = await res.json();
-            
-            const badge = document.getElementById('conn-badge');
-            const axisOut = document.getElementById('axis-out');
-            const svcOut = document.getElementById('svc-out');
-            const card = document.getElementById('debug-status-card');
-            
-            if (data.ok && data.connected) {
-                badge.className = 'badge bg-success';
-                badge.textContent = `CONNECTED: ${data.device_name}`;
-                card.style.borderColor = '#198754';
-                
-                axisOut.textContent = JSON.stringify(data.axis_state, null, 2);
-                svcOut.textContent = `Steer Target:   ${data.steer_target}
-Pan Target:     ${data.pan_target}
-Tilt Target:    ${data.tilt_target}
-Last Motor Cmd: ${JSON.stringify(data.last_motor_cmd)}`;
-            } else {
-                badge.className = 'badge bg-secondary';
-                badge.textContent = 'DISCONNECTED';
-                card.style.borderColor = 'var(--border-color)';
-                axisOut.textContent = 'No gamepad connected.';
-                svcOut.textContent = 'No gamepad connected.';
-            }
-        } catch(e) {
-            console.error(e);
-        }
-        setTimeout(pollDebug, 100); // 10Hz updates
-    }
+  async function pollDebug() {
+    try {
+      const d = await fetch('/api/bluetooth/debug').then(r => r.json());
+      const badge = document.getElementById('conn-badge');
+      const card = document.getElementById('debug-status-card');
 
-    document.addEventListener("DOMContentLoaded", () => {
-        pollDebug();
-    });
+      if (d.ok && d.connected) {
+        badge.textContent = `CONNECTED: ${d.device_name}`;
+        badge.style.color = 'var(--accent)';
+        badge.style.borderColor = 'rgba(0,255,204,0.4)';
+        card.style.borderColor = 'rgba(0,255,204,0.2)';
+
+        document.getElementById('axis-out').textContent = JSON.stringify(d.axis_state, null, 2);
+        document.getElementById('svc-out').textContent =
+          `Steer Target:   ${d.steer_target}\nPan Target:     ${d.pan_target}\nTilt Target:    ${d.tilt_target}\nLast Motor Cmd: ${JSON.stringify(d.last_motor_cmd)}`;
+      } else {
+        badge.textContent = 'DISCONNECTED';
+        badge.style.color = 'var(--muted)';
+        badge.style.borderColor = 'rgba(255,255,255,0.12)';
+        card.style.borderColor = 'var(--border)';
+        document.getElementById('axis-out').textContent = 'No gamepad connected.';
+        document.getElementById('svc-out').textContent = 'No gamepad connected.';
+      }
+    } catch(e) { console.error(e); }
+    setTimeout(pollDebug, 100);
+  }
+
+  document.addEventListener('DOMContentLoaded', pollDebug);
 </script>
 {% endblock %}
