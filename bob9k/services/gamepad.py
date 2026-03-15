@@ -43,14 +43,9 @@ class GamepadService:
         'tilt_up': None,
         'tilt_down': None,
         'estop_toggle': 'BTN_B',
-        'lights_toggle': 'BTN_TR',      # Right bumper
-        'camera_home': 'BTN_THUMBR',    # Right stick click
-        'steering_center': 'BTN_THUMBL',# Left stick click
-        'x_btn': None,
-        'y_btn': None,
-        'select': None,
-        'start': None,
-        'guide': None
+        'lights_toggle': 'BTN_A',       # A button
+        'camera_home': None,
+        'steering_center': None
     }
 
     KEY_ALIASES = {
@@ -216,7 +211,7 @@ class GamepadService:
 
             if event.type == evdev.ecodes.EV_KEY:
                 key_event = evdev.categorize(event)
-                key_name = evdev.ecodes.KEY.get(key_event.keycode) or f"BTN_{key_event.keycode}"
+                key_name = key_event.keycode
                 if isinstance(key_name, list):
                     key_name = key_name[0]
                 
@@ -224,15 +219,16 @@ class GamepadService:
                 self.axis_state[key_name] = key_event.keystate
                 
                 if key_event.keystate == key_event.key_down:
-                    self._handle_button(key_event.keycode, is_down=True)
+                    self._handle_button(key_name, is_down=True)
                 elif key_event.keystate == key_event.key_up:
-                    self._handle_button(key_event.keycode, is_down=False)
+                    self._handle_button(key_name, is_down=False)
 
             elif event.type == evdev.ecodes.EV_ABS:
                 abs_code = evdev.ecodes.ABS[event.code]
-                if abs_code in self.axis_state:
-                    self.axis_state[abs_code] = event.value
-                    self._process_axes()
+                if isinstance(abs_code, list):
+                    abs_code = abs_code[0]
+                self.axis_state[abs_code] = event.value
+                self._process_axes()
 
     def _handle_button(self, keycode, is_down: bool):
         if not self.runtime or not self.runtime.registry:
@@ -245,9 +241,15 @@ class GamepadService:
             mapped_key = m.get(action_name)
             if not mapped_key:
                 return False
-            if isinstance(keycode, list):
-                return mapped_key in keycode or self.KEY_ALIASES.get(mapped_key) in keycode
-            return keycode == mapped_key or keycode == self.KEY_ALIASES.get(mapped_key)
+            if keycode == mapped_key:
+                return True
+            alias1 = self.KEY_ALIASES.get(keycode)
+            alias2 = self.KEY_ALIASES.get(mapped_key)
+            if alias1 and alias1 == mapped_key:
+                return True
+            if alias2 and alias2 == keycode:
+                return True
+            return False
 
         holdable = ['pan_left', 'pan_right', 'tilt_up', 'tilt_down']
         for act in holdable:
@@ -287,17 +289,6 @@ class GamepadService:
             if reg.steering:
                 reg.steering.center()
                 self._steer_target = reg.steering.angle
-
-        elif is_mapped('x_btn'):
-            self.logger.info("Gamepad: X button pressed")
-        elif is_mapped('y_btn'):
-            self.logger.info("Gamepad: Y button pressed")
-        elif is_mapped('select'):
-            self.logger.info("Gamepad: Select/Back button pressed")
-        elif is_mapped('start'):
-            self.logger.info("Gamepad: Start button pressed")
-        elif is_mapped('guide'):
-            self.logger.info("Gamepad: Guide/Home button pressed")
 
     def _button_hold_loop(self):
         while not self._stop_event.is_set():
