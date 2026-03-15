@@ -406,8 +406,8 @@ class GamepadService:
                 self.logger.warning("Gamepad: E-STOP triggered by button toggle!")
 
         elif is_mapped('lights_toggle'):
-            if reg.status_leds:
-                reg.status_leds.cycle_preset()
+            if hasattr(self.runtime, 'status_leds') and self.runtime.status_leds:
+                self.runtime.status_leds.cycle_preset()
                 self.logger.info("Gamepad: Lights cycled to next preset")
 
         elif is_mapped('camera_home'):
