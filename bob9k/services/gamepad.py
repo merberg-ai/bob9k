@@ -45,6 +45,7 @@ class GamepadService:
         'tilt_down': None,
         'estop_toggle': 'BTN_B',
         'lights_toggle': 'BTN_A',       # A button
+        'tracking_toggle': None,        # Empty by default
         'camera_home': None,
         'steering_center': None
     }
@@ -409,6 +410,11 @@ class GamepadService:
             if hasattr(self.runtime, 'status_leds') and self.runtime.status_leds:
                 self.runtime.status_leds.cycle_preset()
                 self.logger.info("Gamepad: Lights cycled to next preset")
+
+        elif is_mapped('tracking_toggle'):
+            if hasattr(self.runtime, 'tracking') and self.runtime.tracking:
+                self.runtime.tracking.toggle()
+                self.logger.info("Gamepad: Tracking toggled")
 
         elif is_mapped('camera_home'):
             if reg.camera_servo:

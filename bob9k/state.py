@@ -15,3 +15,4 @@ class RuntimeState:
     pan_angle: int = 90
     tilt_angle: int = 90
     telemetry: dict[str, Any] = field(default_factory=dict)
+    tracking_enabled: bool = False

@@ -68,6 +68,10 @@ class StartupManager:
             runtime.gamepad = GamepadService(runtime, self.logger)
             runtime.gamepad.start()
 
+            from bob9k.services.tracking import TrackingService
+            runtime.tracking = TrackingService(runtime, self.logger)
+            runtime.tracking.start()
+
             runtime.telemetry = TelemetryService(runtime, self.logger)
             runtime.telemetry.poll_once()
             runtime.telemetry.start()
