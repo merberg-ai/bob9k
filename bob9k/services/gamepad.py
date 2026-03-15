@@ -4,6 +4,7 @@ import threading
 import time
 from typing import Optional
 
+
 try:
     import evdev
 except ImportError:
@@ -85,6 +86,10 @@ class GamepadService:
             'ABS_HAT0X': 0, 'ABS_HAT0Y': 0,
         }
         self.axis_info: dict[str, tuple[int, int, int]] = {}
+        self.available_axes: list[str] = []
+        self.available_buttons: list[str] = []
+        self.last_device_scan: list[dict[str, object]] = []
+        self.last_input_event: dict[str, object] | None = None
         self.last_servo_update = 0.0
         self._steer_target = None
         self._pan_target = None
@@ -117,33 +122,152 @@ class GamepadService:
                 pass
             self.device = None
 
+    def _score_device(self, dev: evdev.InputDevice) -> tuple[int, dict[str, object]]:
+        info: dict[str, object] = {
+            'path': getattr(dev, 'path', ''),
+            'name': getattr(dev, 'name', '') or 'Unknown input device',
+            'score': 0,
+            'axes': [],
+            'buttons': [],
+        }
+
+        try:
+            caps = dev.capabilities()
+        except Exception as exc:
+            info['error'] = str(exc)
+            return 0, info
+
+        name = str(info['name']).lower()
+        if any(token in name for token in ('xbox', 'gamepad', 'controller', 'joystick')):
+            info['score'] = int(info['score']) + 3
+
+        abs_codes = []
+        for entry in caps.get(evdev.ecodes.EV_ABS, []):
+            code = entry[0] if isinstance(entry, tuple) else entry
+            axis_name = evdev.ecodes.ABS.get(code)
+            if isinstance(axis_name, list):
+                axis_name = axis_name[0]
+            if axis_name:
+                abs_codes.append(axis_name)
+
+        key_codes = []
+        for entry in caps.get(evdev.ecodes.EV_KEY, []):
+            code = entry[0] if isinstance(entry, tuple) else entry
+            key_name = evdev.ecodes.KEY.get(code)
+            if isinstance(key_name, list):
+                key_name = key_name[0]
+            if key_name:
+                key_codes.append(key_name)
+
+        info['axes'] = sorted(set(abs_codes))
+        info['buttons'] = sorted(set(key_codes))
+
+        preferred_axes = {
+            'ABS_X': 2, 'ABS_Y': 2,
+            'ABS_RX': 2, 'ABS_RY': 2,
+            'ABS_Z': 2, 'ABS_RZ': 2,
+            'ABS_GAS': 2, 'ABS_BRAKE': 2,
+            'ABS_HAT0X': 1, 'ABS_HAT0Y': 1,
+        }
+        preferred_buttons = {
+            'BTN_SOUTH': 1, 'BTN_A': 1, 'BTN_EAST': 1, 'BTN_B': 1,
+            'BTN_THUMBL': 1, 'BTN_THUMBR': 1, 'BTN_TL': 1, 'BTN_TR': 1,
+            'BTN_TL2': 1, 'BTN_TR2': 1, 'BTN_START': 1, 'BTN_SELECT': 1,
+            'BTN_MODE': 1,
+        }
+
+        score = int(info['score'])
+        for axis_name, points in preferred_axes.items():
+            if axis_name in info['axes']:
+                score += points
+        for key_name, points in preferred_buttons.items():
+            if key_name in info['buttons']:
+                score += points
+
+        if info['axes'] and info['buttons']:
+            score += 2
+
+        info['score'] = score
+        return score, info
+
     def _find_gamepad(self) -> Optional[evdev.InputDevice]:
         devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+        candidates: list[tuple[int, evdev.InputDevice, dict[str, object]]] = []
+        scanned: list[dict[str, object]] = []
+
         for dev in devices:
-            name = (dev.name or '').lower()
-            if 'xbox' in name or 'gamepad' in name or 'controller' in name:
-                self._load_axis_info(dev)
-                self.logger.info("Gamepad connected: %s at %s", dev.name, dev.path)
-                return dev
-        return None
+            try:
+                score, info = self._score_device(dev)
+            except Exception as exc:
+                score, info = 0, {
+                    'path': getattr(dev, 'path', ''),
+                    'name': getattr(dev, 'name', '') or 'Unknown input device',
+                    'score': 0,
+                    'error': str(exc),
+                }
+
+            scanned.append(info)
+            if score > 0:
+                candidates.append((score, dev, info))
+
+        self.last_device_scan = sorted(scanned, key=lambda item: (int(item.get('score', 0)), str(item.get('name', ''))), reverse=True)
+
+        if not candidates:
+            self.available_axes = []
+            self.available_buttons = []
+            return None
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        best_score, best_dev, best_info = candidates[0]
+        self._load_axis_info(best_dev)
+        self.available_axes = list(best_info.get('axes', []))
+        self.available_buttons = list(best_info.get('buttons', []))
+        self.logger.info(
+            "Gamepad connected: %s at %s (score=%s axes=%s buttons=%s)",
+            best_dev.name,
+            best_dev.path,
+            best_score,
+            self.available_axes,
+            self.available_buttons,
+        )
+        return best_dev
 
     def _load_axis_info(self, dev: evdev.InputDevice) -> None:
         self.axis_info = {}
+        self.available_axes = []
+        self.available_buttons = []
         try:
             caps = dev.capabilities(absinfo=True)
             for code, absinfo in caps.get(evdev.ecodes.EV_ABS, []):
                 axis_name = evdev.ecodes.ABS.get(code)
+                if isinstance(axis_name, list):
+                    axis_name = axis_name[0]
                 if not axis_name:
                     continue
                 minimum = int(getattr(absinfo, 'min', 0))
                 maximum = int(getattr(absinfo, 'max', 0))
                 flat = int(getattr(absinfo, 'flat', 0))
                 self.axis_info[axis_name] = (minimum, maximum, flat)
+                self.available_axes.append(axis_name)
+
+            for entry in caps.get(evdev.ecodes.EV_KEY, []):
+                code = entry[0] if isinstance(entry, tuple) else entry
+                key_name = evdev.ecodes.KEY.get(code)
+                if isinstance(key_name, list):
+                    key_name = key_name[0]
+                if key_name:
+                    self.available_buttons.append(key_name)
+
+            self.available_axes = sorted(set(self.available_axes))
+            self.available_buttons = sorted(set(self.available_buttons))
+
             if self.axis_info:
                 self.logger.info("Gamepad axis ranges detected: %s", self.axis_info)
         except Exception as exc:
             self.logger.warning("Unable to read gamepad axis ranges: %s", exc)
             self.axis_info = {}
+            self.available_axes = []
+            self.available_buttons = []
 
     def _connection_loop(self):
         while not self._stop_event.is_set():
@@ -227,6 +351,7 @@ class GamepadService:
                 
                 # Expose the state so the frontend debug/mapping endpoints can read it
                 self.axis_state[key_name] = event.value
+                self.last_input_event = {'type': 'button', 'code': key_name, 'value': int(event.value), 'ts': time.time()}
                 
                 if event.value == 1:
                     self._handle_button(key_name, is_down=True)
@@ -238,6 +363,7 @@ class GamepadService:
                 if isinstance(abs_code, list):
                     abs_code = abs_code[0]
                 self.axis_state[abs_code] = event.value
+                self.last_input_event = {'type': 'axis', 'code': abs_code, 'value': int(event.value), 'ts': time.time()}
                 self._process_axes()
 
     def _handle_button(self, keycode, is_down: bool):

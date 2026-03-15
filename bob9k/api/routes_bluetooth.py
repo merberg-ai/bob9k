@@ -98,15 +98,30 @@ def register_bluetooth_routes(app: Flask) -> None:
     @app.get('/api/bluetooth/debug')
     def get_gamepad_debug():
         runtime = current_app.config['BOB9K_RUNTIME']
-        if getattr(runtime, 'gamepad', None) and runtime.gamepad.device is not None:
-             return {
-                 'ok': True,
-                 'connected': True,
-                 'device_name': runtime.gamepad.device.name,
-                 'axis_state': runtime.gamepad.axis_state,
-                 'steer_target': runtime.gamepad._steer_target,
-                 'pan_target': runtime.gamepad._pan_target,
-                 'tilt_target': runtime.gamepad._tilt_target,
-                 'last_motor_cmd': runtime.gamepad._last_motor_cmd
-             }
-        return {'ok': True, 'connected': False}
+        gamepad = getattr(runtime, 'gamepad', None)
+        if not gamepad:
+            return {'ok': False, 'connected': False, 'error': 'Gamepad service not running'}
+
+        device = getattr(gamepad, 'device', None)
+        payload = {
+            'ok': True,
+            'connected': device is not None,
+            'mapping': gamepad.mapping,
+            'axis_state': gamepad.axis_state,
+            'axis_info': gamepad.axis_info,
+            'available_axes': getattr(gamepad, 'available_axes', []),
+            'available_buttons': getattr(gamepad, 'available_buttons', []),
+            'last_input_event': getattr(gamepad, 'last_input_event', None),
+            'last_device_scan': getattr(gamepad, 'last_device_scan', []),
+            'steer_target': gamepad._steer_target,
+            'pan_target': gamepad._pan_target,
+            'tilt_target': gamepad._tilt_target,
+            'last_motor_cmd': gamepad._last_motor_cmd,
+        }
+        if device is not None:
+            payload.update({
+                'device_name': device.name,
+                'device_path': getattr(device, 'path', None),
+                'device_phys': getattr(device, 'phys', None),
+            })
+        return payload

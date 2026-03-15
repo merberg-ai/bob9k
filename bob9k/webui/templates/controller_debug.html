@@ -26,6 +26,21 @@
         </div>
       </div>
     </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+      <div>
+        <div style="font-size:0.7rem; color:var(--accent); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px;">Detected Axes / Buttons</div>
+        <div style="background:rgba(0,0,0,0.4); border:1px solid var(--border); border-radius:10px; min-height:180px; padding:12px;">
+          <pre id="caps-out" style="font-family:monospace; font-size:0.78rem; color:var(--accent); margin:0; white-space:pre-wrap;">Awaiting data...</pre>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem; color:#ffb347; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px;">Device Selection Scan</div>
+        <div style="background:rgba(0,0,0,0.4); border:1px solid var(--border); border-radius:10px; min-height:180px; padding:12px;">
+          <pre id="scan-out" style="font-family:monospace; font-size:0.78rem; color:#ffb347; margin:0; white-space:pre-wrap;">Awaiting data...</pre>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div style="display:flex; gap:10px;">
@@ -58,6 +73,12 @@
         card.style.borderColor = 'var(--border)';
         document.getElementById('axis-out').textContent = 'No gamepad connected.';
         document.getElementById('svc-out').textContent = 'No gamepad connected.';
+        document.getElementById('caps-out').textContent = JSON.stringify({
+          available_axes: d.available_axes || [],
+          available_buttons: d.available_buttons || [],
+          axis_info: d.axis_info || {}
+        }, null, 2);
+        document.getElementById('scan-out').textContent = JSON.stringify(d.last_device_scan || [], null, 2);
       }
     } catch(e) { console.error(e); }
     setTimeout(pollDebug, 100);

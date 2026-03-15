@@ -64,14 +64,15 @@
     { id: 'estop_toggle', label: 'Toggle E-Stop', type: 'button', group: 'Safety' }
   ];
 
-  const knownAxes = ['ABS_X', 'ABS_Y', 'ABS_Z', 'ABS_RX', 'ABS_RY', 'ABS_RZ', 'ABS_HAT0X', 'ABS_HAT0Y'];
-  const knownBtns = ['BTN_A', 'BTN_B', 'BTN_X', 'BTN_Y', 'BTN_TR', 'BTN_TL', 'BTN_THUMBR', 'BTN_THUMBL', 'BTN_SOUTH', 'BTN_EAST', 'BTN_NORTH', 'BTN_WEST', 'BTN_TR2', 'BTN_TL2'];
+  const knownAxes = ['ABS_X', 'ABS_Y', 'ABS_Z', 'ABS_RX', 'ABS_RY', 'ABS_RZ', 'ABS_GAS', 'ABS_BRAKE', 'ABS_HAT0X', 'ABS_HAT0Y'];
+  const knownBtns = ['BTN_A', 'BTN_B', 'BTN_X', 'BTN_Y', 'BTN_TR', 'BTN_TL', 'BTN_THUMBR', 'BTN_THUMBL', 'BTN_SOUTH', 'BTN_EAST', 'BTN_NORTH', 'BTN_WEST', 'BTN_TR2', 'BTN_TL2', 'BTN_START', 'BTN_SELECT', 'BTN_MODE', 'BTN_BACK'];
 
   let currentMapping = {};
   let isConnected = false;
   let activeListenId = null;
   let baselineState = null;
   let listenPollInterval = null;
+  let activeAxisInfo = {};
 
   function showListeningModal() {
     const el = document.getElementById('listening-overlay');
@@ -96,6 +97,7 @@
         badge.style.color = 'var(--muted)';
         badge.style.borderColor = 'rgba(255,255,255,0.12)';
       }
+      activeAxisInfo = d.axis_info || {};
       return d;
     } catch(e) {
       isConnected = false;
@@ -181,10 +183,13 @@
       const diff = Math.abs(val - base);
       const isBtn = knownBtns.includes(key) || key.startsWith('BTN_');
       const isAxis = knownAxes.includes(key) || key.startsWith('ABS_');
+      const info = activeAxisInfo[key] || [0, 0, 0];
+      const flat = Array.isArray(info) ? (info[2] || 0) : 0;
       let ok = false;
       if (isBtn && diff >= 1 && val === 1) ok = true;
-      else if (isAxis && diff > 8000) ok = true;
-      else if (isAxis && diff > 200 && key.includes('HAT')) ok = true;
+      else if (isAxis && key.includes('HAT') && diff >= 1) ok = true;
+      else if (isAxis && (key === 'ABS_Z' || key === 'ABS_RZ' || key === 'ABS_GAS' || key === 'ABS_BRAKE') && diff >= Math.max(64, flat + 16)) ok = true;
+      else if (isAxis && diff >= Math.max(8000, flat * 2, 2048)) ok = true;
       if (!ok) continue;
       if (expectedType === 'button' && isAxis) continue;
       if (expectedType === 'axis' && isBtn) continue;
