@@ -42,25 +42,6 @@
 </section>
 
 <section class='card'>
-  <h3>System Operations</h3>
-  <p>Warning: Rebooting the system will momentarily cut the connection until the Pi has fully restarted. Please use cautiously.</p>
-  <div class='button-grid mt-3'>
-    <button class='danger' onclick="rebootSystem()">Reboot System</button>
-  </div>
-  <script>
-    async function rebootSystem() {
-        if (!confirm("Are you sure you want to reboot the system? You will lose connection temporarily.")) return;
-        try {
-            await fetch('/api/system/reboot', { method: 'POST' });
-            alert("Reboot command sent! Please wait a minute while the system restarts.");
-        } catch(e) {
-            alert("Error trying to send reboot command: " + e);
-        }
-    }
-  </script>
-</section>
-
-<section class='card'>
   <h3>Camera Tuning</h3>
   <p class='muted'>Preview uses the live rover camera feed. Saving camera settings will always restart the camera so the new values fully stick instead of pretending they did.</p>
   <img

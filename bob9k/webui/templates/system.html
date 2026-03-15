@@ -1,1 +1,47 @@
-{% extends 'base.html' %}{% block content %}<section class='card'><h2>System</h2><p id='system-ip'>IP: --</p><p id='system-mode'>Mode: --</p><p id='system-led'>LED state: --</p></section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+
+<div style="display:flex; flex-direction:column; gap:14px; max-width:800px; margin:0 auto;">
+
+  <section class='card'>
+    <div class="card-header">System Information</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <p id='system-ip' style="margin:0; font-family:monospace;">IP: --</p>
+      <p id='system-mode' style="margin:0;">Mode: --</p>
+      <p id='system-led' style="margin:0;">LED state: --</p>
+    </div>
+  </section>
+
+  <section class='card border-danger'>
+    <div class="card-header" style="color:#ff6688;">System Operations</div>
+    <p class="muted">Warning: Rebooting the system will momentarily cut the connection. Shutting down the system will permanently cut the connection until you manually power cycle the rover hardware.</p>
+    <div class='button-grid mt-3' style="grid-template-columns: 1fr 1fr;">
+      <button class='danger' onclick="rebootSystem()" style="background:transparent; border:1px solid rgba(255,51,102,0.5); color:#ff6688;">Reboot System</button>
+      <button class='danger' onclick="shutdownSystem()" style="background:var(--danger); color:var(--text); border:1px solid var(--danger);">Shutdown System</button>
+    </div>
+    <script>
+      async function rebootSystem() {
+          if (!confirm("Are you sure you want to reboot the system? You will lose connection temporarily.")) return;
+          try {
+              await fetch('/api/system/reboot', { method: 'POST' });
+              alert("Reboot command sent! Please wait a minute while the system restarts.");
+          } catch(e) {
+              alert("Error trying to send reboot command: " + e);
+          }
+      }
+
+      async function shutdownSystem() {
+          if (!confirm("WARNING: Are you sure you want to SHUTDOWN the system? You will completely lose connection and must physically unplug and replug the rover to turn it back on.")) return;
+          try {
+              await fetch('/api/system/shutdown', { method: 'POST' });
+              alert("Shutdown command sent! The rover will power down in a few seconds.");
+          } catch(e) {
+              alert("Error trying to send shutdown command: " + e);
+          }
+      }
+    </script>
+  </section>
+
+</div>
+
+{% endblock %}

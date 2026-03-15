@@ -3,27 +3,6 @@
 
 <div style="display:flex; flex-direction:column; gap:14px;">
 
-  <!-- Battery & Status Hero -->
-  <div class="card">
-    <div class="card-header">System Overview</div>
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-        <div>
-          <div style="font-size:0.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:4px;">Battery</div>
-          <div style="font-size:1.8rem; font-weight:700;" id="dash-battery-pct">--%</div>
-          <div style="font-size:0.8rem; color:var(--muted);" id="dash-battery-status">--</div>
-        </div>
-        <div style="flex:1; max-width:200px;">
-          <div class="battery-progress" style="height:14px;">
-            <div id="dash-batt-fill" class="battery-progress-fill"></div>
-          </div>
-          <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;" id="dash-battery-voltage">-- V</div>
-        </div>
-        <button class="danger estop-button" data-action="global-estop" style="min-width:90px;">E-STOP</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Telemetry Grid -->
   <div class="card">
     <div class="card-header">Telemetry</div>
@@ -89,16 +68,6 @@
   async function dashPoll() {
     try {
       const d = await fetch('/api/status').then(r => r.json());
-
-      // Battery
-      const pct = d.battery_percent ?? 0;
-      document.getElementById('dash-battery-pct').textContent = d.battery_percent !== null ? pct + '%' : '--%';
-      document.getElementById('dash-battery-status').textContent = d.battery_status ?? '--';
-      document.getElementById('dash-battery-voltage').textContent = d.battery_voltage !== null ? d.battery_voltage + ' V' : '--V';
-
-      const fill = document.getElementById('dash-batt-fill');
-      fill.style.width = pct + '%';
-      fill.className = 'battery-progress-fill' + (pct <= 15 ? ' is-critical' : pct <= 30 ? ' is-low' : ' is-ok');
 
       // Telemetry
       document.getElementById('dash-motor-state').textContent = d.motor_state ?? '--';

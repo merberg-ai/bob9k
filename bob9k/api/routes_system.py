@@ -11,3 +11,9 @@ def register_system_routes(app: Flask) -> None:
         import os
         os.system('sudo reboot')
         return {'ok': True}
+
+    @app.post('/api/system/shutdown')
+    def api_system_shutdown():
+        import os
+        os.system('sudo shutdown -h now')
+        return {'ok': True}
