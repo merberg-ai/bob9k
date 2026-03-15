@@ -1,26 +1,30 @@
 <div align="center">
   <img src="https://img.icons8.com/color/96/000000/robot-3.png" alt="bob9k logo" width="100"/>
-  <h1>bob9k 🤖</h1>
+  <h1>bob9k 🤖 (v1.1 Stable)</h1>
   <p><em>Mobile-first robot control scaffold for the Adeept PiCar platform.</em> 🚗💨</p>
 
   [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
   [![Flask](https://img.shields.io/badge/Flask-3.x-lightgrey.svg)](https://flask.palletsprojects.com/)
   [![Hardware](https://img.shields.io/badge/Hardware-Adeept_PiCar-orange.svg)](https://www.adeept.com/)
-  [![Status](https://img.shields.io/badge/Status-Beta-brightgreen.svg)]()
+  [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)]()
 </div>
 
 <br />
 
-`bob9k` is a modern, lightweight, and extensible web interface and API for controlling the **Adeept PiCar**, providing a robust foundation for your Raspberry Pi robotics projects.
+`bob9k` is a modern, lightweight, and extensible web interface and API for controlling the **Adeept PiCar**, providing a robust foundation for your Raspberry Pi robotics projects. 
+
+Version 1.1 brings drastically improved controller support, custom RGB headlight tuning, and silky-smooth cinematic camera controls. 🚀
 
 ## ✨ Features
 - 🚀 **Safe Boot-time Initialization**: Orderly startup of I2C and GPIO resources to avoid conflicts.
 - 🔒 **Single-Process IO Ownership**: Prevents resource conflicts and hardware glitches.
-- 🚦 **RGB Eye Status Control**: Visual system status feedback via WS2812 LEDs.
-- 📱 **Mobile-Friendly Web UI**: Responsive interface designed natively for smartphones and tablets.
-- 🎮 **API First Design**: Complete RESTful interface for external control and scripting.
-- ⚙️ **Extensible**: Ready for future settings, diagnostics, and AI behaviors.
-- 🕹️ **Gamepad Support**: Web-based controller integration.
+- 🚦 **RGB Eye Status Control**: Visual system status feedback with an interactive **Custom Color Picker** UI.
+- 📱 **Mobile-Friendly Web UI**: Responsive dark flat-glassmorphic interface designed natively for smartphones and tablets.
+- 🎮 **Robust Gamepad Support**: Deep integration with Xbox/Bluetooth controllers featuring:
+  - Dynamic right-stick camera mappings with **Cinematic Smoothing**.
+  - Interactive Web UI to test inputs and natively remap any axis/button on the fly.
+  - Quick-toggle cycle for Headlight states (Off -> Green -> Red -> Blue -> White -> Police -> Custom).
+- 🕹️ **API First Design**: Complete RESTful interface for external control and scripting.
 
 ## 🛠️ Hardware Requirements
 - **Raspberry Pi** (3 / 4 / Zero 2 W recommended)
