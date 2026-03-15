@@ -72,3 +72,19 @@ def register_bluetooth_routes(app: Flask) -> None:
         runtime.config['gamepad_mapping'] = new_map
         
         return {'ok': True}
+
+    @app.get('/api/bluetooth/debug')
+    def get_gamepad_debug():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        if getattr(runtime, 'gamepad', None) and runtime.gamepad.device is not None:
+             return {
+                 'ok': True,
+                 'connected': True,
+                 'device_name': runtime.gamepad.device.name,
+                 'axis_state': runtime.gamepad.axis_state,
+                 'steer_target': runtime.gamepad._steer_target,
+                 'pan_target': runtime.gamepad._pan_target,
+                 'tilt_target': runtime.gamepad._tilt_target,
+                 'last_motor_cmd': runtime.gamepad._last_motor_cmd
+             }
+        return {'ok': True, 'connected': False}

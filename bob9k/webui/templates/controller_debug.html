@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4" id="debug-status-card">
+            <div class="card-header d-flex justify-content-between">
+                <span>CONTROLLER DEBUG MENU</span>
+                <span id="conn-badge" class="badge bg-secondary">DISCONNECTED</span>
+            </div>
+            <div class="card-body">
+                <p class="text-secondary small mb-3">
+                    Live raw axis values and servo targeting from the <code>GamepadService</code>.
+                </p>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <strong class="text-muted d-block mb-2">RAW AXIS STATE</strong>
+                        <div class="bg-dark rounded p-3" style="border: 1px solid var(--border-color); height: 250px; overflow-y: auto;">
+                            <pre id="axis-out" class="font-monospace small mb-0" style="color: #00ffcc;">Awaiting data...</pre>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <strong class="text-muted d-block mb-2">SERVICE STATE</strong>
+                        <div class="bg-dark rounded p-3" style="border: 1px solid var(--border-color); height: 250px; overflow-y: auto;">
+                            <pre id="svc-out" class="font-monospace small mb-0" style="color: #ffcc00;">Awaiting data...</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function pollDebug() {
+        try {
+            const res = await fetch('/api/bluetooth/debug');
+            const data = await res.json();
+            
+            const badge = document.getElementById('conn-badge');
+            const axisOut = document.getElementById('axis-out');
+            const svcOut = document.getElementById('svc-out');
+            const card = document.getElementById('debug-status-card');
+            
+            if (data.ok && data.connected) {
+                badge.className = 'badge bg-success';
+                badge.textContent = `CONNECTED: ${data.device_name}`;
+                card.style.borderColor = '#198754';
+                
+                axisOut.textContent = JSON.stringify(data.axis_state, null, 2);
+                svcOut.textContent = `Steer Target:   ${data.steer_target}
+Pan Target:     ${data.pan_target}
+Tilt Target:    ${data.tilt_target}
+Last Motor Cmd: ${JSON.stringify(data.last_motor_cmd)}`;
+            } else {
+                badge.className = 'badge bg-secondary';
+                badge.textContent = 'DISCONNECTED';
+                card.style.borderColor = 'var(--border-color)';
+                axisOut.textContent = 'No gamepad connected.';
+                svcOut.textContent = 'No gamepad connected.';
+            }
+        } catch(e) {
+            console.error(e);
+        }
+        setTimeout(pollDebug, 100); // 10Hz updates
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        pollDebug();
+    });
+</script>
+{% endblock %}
