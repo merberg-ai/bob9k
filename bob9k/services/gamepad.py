@@ -151,30 +151,45 @@ class GamepadService:
         reg = self.runtime.registry
         m = self.mapping
         
-        # 'BTN_A' or 'BTN_SOUTH', varies slightly by driver. For simplicity we check strings
-        if keycode in (m.get('clear_estop'), 'BTN_SOUTH'):
+        def is_mapped(action_name):
+            mapped_key = m.get(action_name)
+            if not mapped_key:
+                return False
+            if keycode == mapped_key:
+                return True
+            aliases = {
+                'BTN_A': 'BTN_SOUTH', 'BTN_SOUTH': 'BTN_A',
+                'BTN_B': 'BTN_EAST',  'BTN_EAST': 'BTN_B',
+                'BTN_X': 'BTN_NORTH', 'BTN_NORTH': 'BTN_X',
+                'BTN_Y': 'BTN_WEST',  'BTN_WEST': 'BTN_Y',
+                'BTN_TR2': 'BTN_TR',  'BTN_TR': 'BTN_TR2',
+                'BTN_TL2': 'BTN_TL',  'BTN_TL': 'BTN_TL2',
+            }
+            return keycode == aliases.get(mapped_key)
+
+        if is_mapped('clear_estop'):
             if reg.motors.estop_latched:
                 reg.motors.clear_estop()
                 self.logger.info("Gamepad: E-STOP cleared by button")
                 
-        elif keycode in (m.get('estop'), 'BTN_EAST'):
+        elif is_mapped('estop'):
             if not reg.motors.estop_latched:
                 reg.motors.emergency_stop(latch=True)
                 self.logger.warning("Gamepad: E-STOP triggered!")
                 
-        elif keycode in (m.get('lights_on'), 'BTN_TR2'): 
+        elif is_mapped('lights_on'): 
             if reg.lights:
                reg.lights.set_custom_color(255, 255, 255) # Headlights on
                
-        elif keycode in (m.get('lights_off'), 'BTN_TL2'): 
+        elif is_mapped('lights_off'): 
             if reg.lights:
                reg.lights.off() # Headlights off
                
-        elif keycode == m.get('camera_home'): 
+        elif is_mapped('camera_home'): 
              if reg.camera_servo:
                  reg.camera_servo.home()
                  
-        elif keycode == m.get('steering_center'): 
+        elif is_mapped('steering_center'): 
              if reg.steering:
                  reg.steering.center()
                  
@@ -189,8 +204,8 @@ class GamepadService:
         # 1. THROTTLE (Left/Right Triggers)
         # Triggers map 0 to 1023 or 0 to 255 depending on controller type.
         
-        rev_val = self.axis_state.get(m.get('throttle_rev', 'ABS_RZ'), 0)
-        fwd_val = self.axis_state.get(m.get('throttle_fwd', 'ABS_Z'), 0)
+        rev_val = self.axis_state.get(m.get('throttle_rev'), 0)
+        fwd_val = self.axis_state.get(m.get('throttle_fwd'), 0)
         
         # Determine trigger max dynamically or fallback to 1023
         t_max = 1023.0
@@ -216,7 +231,7 @@ class GamepadService:
              
         # 2. STEERING 
         if now - self.last_servo_update > self.servo_update_rate_s:
-            ls_x_val = self._apply_deadzone(self.axis_state.get(m.get('steering', 'ABS_X'), 0))
+            ls_x_val = self._apply_deadzone(self.axis_state.get(m.get('steering'), 0))
             
             # Slew rate filtering (simple lerp) smoothing for steering
             if not hasattr(self, '_steer_target'):
@@ -234,8 +249,8 @@ class GamepadService:
                 reg.steering.set_angle(steer_out)
 
             # 3. CAMERA PAN/TILT 
-            rs_x_val = self._apply_deadzone(self.axis_state.get(m.get('pan', 'ABS_RX'), 0))
-            rs_y_val = self._apply_deadzone(self.axis_state.get(m.get('tilt', 'ABS_RY'), 0))
+            rs_x_val = self._apply_deadzone(self.axis_state.get(m.get('pan'), 0))
+            rs_y_val = self._apply_deadzone(self.axis_state.get(m.get('tilt'), 0))
             
             panned = False
             tilted = False
