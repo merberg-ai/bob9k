@@ -218,6 +218,13 @@ class GamepadService:
 
             if event.type == evdev.ecodes.EV_KEY:
                 key_event = evdev.categorize(event)
+                key_name = evdev.ecodes.KEY.get(key_event.keycode) or f"BTN_{key_event.keycode}"
+                if isinstance(key_name, list):
+                    key_name = key_name[0]
+                
+                # Expose the state so the frontend debug/mapping endpoints can read it
+                self.axis_state[key_name] = key_event.keystate
+                
                 if key_event.keystate == key_event.key_down:
                     self._handle_button(key_event.keycode, is_down=True)
                 elif key_event.keystate == key_event.key_up:
@@ -392,8 +399,6 @@ class GamepadService:
 
         if getattr(reg.camera_servo, 'pan_invert', False):
             pan_norm *= -1.0
-        # Stick up is usually negative, but camera up should feel like up.
-        tilt_norm *= -1.0
         if getattr(reg.camera_servo, 'tilt_invert', False):
             tilt_norm *= -1.0
 
@@ -405,7 +410,8 @@ class GamepadService:
         tilt_center = reg.camera_servo.tilt_center
         tilt_up_range = max(0, tilt_center - reg.camera_servo.tilt_min)
         tilt_down_range = max(0, reg.camera_servo.tilt_max - tilt_center)
-        raw_tilt = tilt_center + (tilt_norm * (-tilt_up_range if tilt_norm < 0 else tilt_down_range))
+        # Note: tilt_norm > 0 means stick up, which implies decreasing the angle (moving towards min)
+        raw_tilt = tilt_center + (tilt_norm * (-tilt_up_range if tilt_norm > 0 else tilt_down_range))
 
         if self._pan_target is None:
             self._pan_target = reg.camera_servo.pan_angle
