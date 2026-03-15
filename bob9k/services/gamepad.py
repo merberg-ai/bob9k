@@ -42,10 +42,8 @@ class GamepadService:
         'pan_right': None,
         'tilt_up': None,
         'tilt_down': None,
-        'estop': 'BTN_B',
-        'clear_estop': 'BTN_A',
-        'lights_on': 'BTN_TR',          # Right bumper
-        'lights_off': 'BTN_TL',         # Left bumper
+        'estop_toggle': 'BTN_B',
+        'lights_toggle': 'BTN_TR',      # Right bumper
         'camera_home': 'BTN_THUMBR',    # Right stick click
         'steering_center': 'BTN_THUMBL',# Left stick click
         'x_btn': None,
@@ -262,23 +260,22 @@ class GamepadService:
         if not is_down:
             return
 
-        if is_mapped('clear_estop'):
+        if is_mapped('estop_toggle'):
             if reg.motors.estop_latched:
                 reg.motors.clear_estop()
-                self.logger.info("Gamepad: E-STOP cleared by button")
-
-        elif is_mapped('estop'):
-            if not reg.motors.estop_latched:
+                self.logger.info("Gamepad: E-STOP cleared by button toggle")
+            else:
                 reg.motors.emergency_stop(latch=True)
-                self.logger.warning("Gamepad: E-STOP triggered!")
+                self.logger.warning("Gamepad: E-STOP triggered by button toggle!")
 
-        elif is_mapped('lights_on'):
+        elif is_mapped('lights_toggle'):
             if reg.lights:
-                reg.lights.set_custom_color(255, 255, 255)
-
-        elif is_mapped('lights_off'):
-            if reg.lights:
-                reg.lights.off()
+                if reg.lights.is_on:
+                    reg.lights.off()
+                    self.logger.info("Gamepad: Lights toggled OFF")
+                else:
+                    reg.lights.set_custom_color(255, 255, 255)
+                    self.logger.info("Gamepad: Lights toggled ON")
 
         elif is_mapped('camera_home'):
             if reg.camera_servo:
@@ -411,7 +408,11 @@ class GamepadService:
         tilt_up_range = max(0, tilt_center - reg.camera_servo.tilt_min)
         tilt_down_range = max(0, reg.camera_servo.tilt_max - tilt_center)
         # Note: tilt_norm > 0 means stick up, which implies decreasing the angle (moving towards min)
-        raw_tilt = tilt_center + (tilt_norm * (-tilt_up_range if tilt_norm > 0 else tilt_down_range))
+        # tilt_norm < 0 means stick down, which implies increasing the angle (moving towards max)
+        if tilt_norm > 0:
+            raw_tilt = tilt_center - (tilt_norm * tilt_up_range)
+        else:
+            raw_tilt = tilt_center + (abs(tilt_norm) * tilt_down_range)
 
         if self._pan_target is None:
             self._pan_target = reg.camera_servo.pan_angle
