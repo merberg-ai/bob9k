@@ -37,7 +37,8 @@
     <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
     <div style="display:flex; justify-content:space-between; gap:10px;">
       <a href="/controller" style="padding:11px 20px; border:1px solid var(--border); border-radius:10px; color:var(--muted); font-size:0.82rem; font-weight:700; letter-spacing:0.06em;">← Back</a>
-      <button onclick="saveMapping()" style="flex:1; max-width:200px; border:1px solid var(--accent); background:var(--accent-dim); color:var(--accent); font-weight:700; letter-spacing:0.06em; cursor:pointer;">Save Mapping</button>
+      <button onclick="resetToDefaults()" style="padding:11px 20px; border:1px solid rgba(255,51,102,0.5); border-radius:10px; color:#ff6688; background:transparent; font-size:0.82rem; font-weight:700; letter-spacing:0.06em; cursor:pointer;">Reset to Defaults</button>
+      <button onclick="saveMapping()" style="flex:1; max-width:200px; border:1px solid var(--accent); background:var(--accent-dim); color:var(--accent); font-weight:700; letter-spacing:0.06em; cursor:pointer; border-radius:10px;">Save Mapping</button>
     </div>
   </div>
 
@@ -143,6 +144,7 @@
           <button onclick="startListening('${item.id}', '${item.label}', '${item.type}')" style="background:transparent; border:1px solid var(--border); color:var(--muted); padding:6px 14px; border-radius:8px; cursor:pointer; font-size:0.8rem; flex-shrink:0; transition:color 0.15s, border-color 0.15s;"
             onmouseover="this.style.color='var(--text)'; this.style.borderColor='rgba(255,255,255,0.25)'"
             onmouseout="this.style.color='var(--muted)'; this.style.borderColor='var(--border)'">Map</button>
+          <button onclick="clearMapping('${item.id}')" style="background:transparent; border:1px solid rgba(255,51,102,0.3); color:#ff6688; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:0.8rem; flex-shrink:0;">Clear</button>
         </div>`;
     });
     container.innerHTML = html;
@@ -218,6 +220,25 @@
       if (d.ok) alert('Mapping saved and applied immediately!');
       else alert('Error: ' + d.error);
     } catch(e) { alert('Network error saving mapping.'); }
+  }
+
+  function clearMapping(actionId) {
+    currentMapping[actionId] = 'Unassigned';
+    renderMappingUI();
+  }
+
+  async function resetToDefaults() {
+    if (!confirm('Are you sure you want to reset all game controller bindings to their factory defaults?')) return;
+    try {
+      const d = await fetch('/api/bluetooth/mapping/reset', { method: 'POST' }).then(r => r.json());
+      if (d.ok) {
+        currentMapping = d.mapping;
+        renderMappingUI();
+        alert('Mapping reset to defaults.');
+      } else {
+        alert('Error: ' + d.error);
+      }
+    } catch(e) { alert('Network error resetting mapping.'); }
   }
 
   document.addEventListener('DOMContentLoaded', () => {

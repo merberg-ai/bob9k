@@ -2,6 +2,7 @@ from __future__ import annotations
 from flask import Flask, current_app, request
 from bob9k.services.bluetooth_manager import BluetoothManager
 from bob9k.config import load_runtime_config, save_runtime_config
+from bob9k.services.gamepad import GamepadService
 
 def register_bluetooth_routes(app: Flask) -> None:
     @app.post('/api/bluetooth/cmd')
@@ -72,6 +73,27 @@ def register_bluetooth_routes(app: Flask) -> None:
         runtime.config['gamepad_mapping'] = new_map
         
         return {'ok': True}
+
+    @app.post('/api/bluetooth/mapping/reset')
+    def reset_gamepad_mapping():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        
+        # Build the pristine default mapping
+        default_map = GamepadService.DEFAULT_MAPPING.copy()
+        
+        # Apply to live service
+        if getattr(runtime, 'gamepad', None):
+            runtime.gamepad.mapping = default_map
+            
+        # Apply to persistent config
+        cfg = load_runtime_config()
+        cfg['gamepad_mapping'] = default_map
+        save_runtime_config(cfg)
+        
+        # Apply to runtime config memory
+        runtime.config['gamepad_mapping'] = default_map
+        
+        return {'ok': True, 'mapping': default_map}
 
     @app.get('/api/bluetooth/debug')
     def get_gamepad_debug():
