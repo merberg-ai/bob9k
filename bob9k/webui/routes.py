@@ -1,0 +1,19 @@
+from __future__ import annotations
+from flask import Flask, render_template
+def register_webui_routes(app: Flask) -> None:
+    @app.get('/')
+    def dashboard(): return render_template('dashboard.html', page='dashboard')
+    @app.get('/control')
+    def control(): return render_template('control.html', page='control')
+    @app.get('/remote')
+    def remote(): return render_template('remote.html', page='remote')
+    @app.get('/lights')
+    def lights(): return render_template('lights.html', page='lights')
+    @app.get('/settings')
+    def settings(): return render_template('settings.html', page='settings')
+    @app.get('/controller')
+    def controller(): return render_template('controller.html', page='controller')
+    @app.get('/system')
+    def system(): return render_template('system.html', page='system')
+    @app.get('/ai')
+    def ai(): return render_template('ai.html', page='ai')

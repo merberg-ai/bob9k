@@ -1,0 +1,19 @@
+servo:
+  steering:
+    trim: -2
+  camera_pan:
+    trim: -7
+  camera_tilt:
+    trim: -15
+motors:
+  reverse_drive: true
+camera:
+  brightness: -0.2
+  contrast: 1.15
+  saturation: 1.05
+  sharpness: 0.9
+  exposure_compensation: -3.8
+  awb_mode: indoor
+  manual_red_gain: null
+  manual_blue_gain: 0.0
+  fps: 20

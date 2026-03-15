@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class='card'>
+  <h2>Lights</h2>
+  <p>RGB eye control for status, testing, future Bob mood swings, and one legally questionable police mode.</p>
+  <div class='button-grid'>
+    <button data-action='led-off'>Off</button>
+    <button data-action='led-ready'>Green</button>
+    <button data-action='led-error'>Red</button>
+    <button data-action='led-custom-blue'>Blue</button>
+    <button data-action='led-custom-white'>White</button>
+    <button data-action='led-police'>Police</button>
+    <button data-action='led-auto'>Auto</button>
+  </div>
+</section>
+{% endblock %}

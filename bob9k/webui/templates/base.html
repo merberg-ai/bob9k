@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>
+  <title>bob9k</title>
+  <link rel='stylesheet' href='{{ url_for("static", filename="css/base.css") }}'>
+  <link rel='stylesheet' href='{{ url_for("static", filename="css/layout.css") }}'>
+  <link rel='stylesheet' href='{{ url_for("static", filename="css/cards.css") }}'>
+  <link rel='stylesheet' href='{{ url_for("static", filename="css/controls.css") }}'>
+  <link rel='stylesheet' href='{{ url_for("static", filename="css/theme.css") }}'>
+</head>
+<body data-page='{{ page }}'>
+  <header class='app-header'>
+    <div>
+      <h1>bob9k</h1>
+      <p class='muted'>mobile-first robot control</p>
+    </div>
+    <div class='header-actions'>
+      <button data-action='global-estop' class='danger estop-button'>E-STOP</button>
+      <div id='status-pill' class='status-pill status-ready'>connecting</div>
+    </div>
+  </header>
+
+  <section id='telemetry-banner' class='telemetry-banner card telemetry-banner-ready'>
+    <div class='telemetry-banner-top'>
+      <div>
+        <div class='telemetry-banner-title'>Rover Status</div>
+        <div id='banner-status-text' class='telemetry-banner-status'>Connecting…</div>
+      </div>
+      <div class='telemetry-banner-battery'>
+        <div class='telemetry-banner-battery-head'>
+          <span>Battery</span>
+          <strong id='banner-battery-label'>--</strong>
+        </div>
+        <div class='battery-progress'>
+          <div id='battery-progress-fill' class='battery-progress-fill'></div>
+        </div>
+      </div>
+    </div>
+
+    <div class='telemetry-banner-grid'>
+      <div class='telemetry-item'>
+        <span>Voltage</span>
+        <strong id='battery-voltage'>--</strong>
+      </div>
+      <div class='telemetry-item'>
+        <span>Distance</span>
+        <strong id='distance-cm'>--</strong>
+      </div>
+      <div class='telemetry-item'>
+        <span>Motors</span>
+        <strong id='banner-motor-state'>--</strong>
+      </div>
+      <div class='telemetry-item'>
+        <span>Speed</span>
+        <strong id='banner-motor-speed'>--</strong>
+      </div>
+      <div class='telemetry-item'>
+        <span>E-STOP</span>
+        <strong id='banner-estop'>--</strong>
+      </div>
+      <div class='telemetry-item'>
+        <span>Motion Lock</span>
+        <strong id='banner-motion-lock'>--</strong>
+      </div>
+    </div>
+    <p id='global-action-message' class='muted global-action-message' aria-live='polite'></p>
+  </section>
+
+  <main class='page-content'>{% block content %}{% endblock %}</main>
+  <nav class='bottom-nav'>
+    <a href='/' class='nav-item {% if page=="dashboard" %}active{% endif %}'>Dash</a>
+    <a href="/control" class="nav-item {% if page == 'control' %}active{% endif %}">
+        <span class="icon">✜</span> Control
+    </a>
+    <a href="/controller" class="nav-item {% if page == 'controller' %}active{% endif %}">
+        <span class="icon">🎮</span> Controller
+    </a>
+    <a href="/lights" class="nav-item {% if page == 'lights' %}active{% endif %}">
+        <span class="icon">💡</span> Lights
+    </a>
+    <a href='/settings' class='nav-item {% if page=="settings" %}active{% endif %}'>Settings</a>
+    <a href='/system' class='nav-item {% if page=="system" %}active{% endif %}'>System</a>
+    <a href='/ai' class='nav-item {% if page=="ai" %}active{% endif %}'>AI</a>
+  </nav>
+  <script src='{{ url_for("static", filename="js/api.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/core.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/dashboard.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/control.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/lights.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/settings.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/system.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/ai.js") }}'></script>
+</body>
+</html>

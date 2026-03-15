@@ -1,0 +1,15 @@
+[Unit]
+Description=bob9k robot control service
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=__BOB9K_USER__
+Group=__BOB9K_USER__
+WorkingDirectory=__BOB9K_HOME__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__BOB9K_HOME__/venv/bin/python __BOB9K_HOME__/app.py
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class='card'>
+  <h2>Dashboard</h2>
+  <p>Quick glance robot health before Bob tries anything dramatic.</p>
+  <div class='button-grid'>
+    <button data-action='stop-all'>Stop</button>
+    <button data-action='led-ready'>Ready</button>
+    <button data-action='led-error'>Error</button>
+    <button data-action='led-off'>Eyes Off</button>
+  </div>
+</section>
+
+<section class='card'>
+  <h3>Live Camera</h3>
+  <img
+    id='dash-camera-stream'
+    class='camera-stream'
+    src='/video_feed?view=dashboard'
+    alt='bob9k camera stream'
+  >
+  <p id='dash-camera-note' class='muted'>Live camera feed</p>
+</section>
+
+<section class='card'>
+  <h3>Telemetry</h3>
+  <div class='status-grid'>
+    <div>
+      <span>Battery Voltage</span>
+      <strong id='dash-battery-voltage'>--</strong>
+    </div>
+    <div>
+      <span>Battery Status</span>
+      <strong id='dash-battery-status'>--</strong>
+    </div>
+    <div>
+      <span>Distance</span>
+      <strong id='dash-distance-cm'>--</strong>
+    </div>
+    <div>
+      <span>Steering</span>
+      <strong id='dash-steering-angle'>--</strong>
+    </div>
+    <div>
+      <span>Camera Pan</span>
+      <strong id='dash-pan-angle'>--</strong>
+    </div>
+    <div>
+      <span>Camera Tilt</span>
+      <strong id='dash-tilt-angle'>--</strong>
+    </div>
+    <div>
+      <span>Motor State</span>
+      <strong id='dash-motor-state'>--</strong>
+    </div>
+    <div>
+      <span>Motor Speed</span>
+      <strong id='dash-motor-speed'>--</strong>
+    </div>
+    <div>
+      <span>Command Age</span>
+      <strong id='dash-command-age'>--</strong>
+    </div>
+    <div>
+      <span>Timeout</span>
+      <strong id='dash-timeout'>--</strong>
+    </div>
+    <div>
+      <span>E-STOP</span>
+      <strong id='dash-estop'>--</strong>
+    </div>
+    <div>
+      <span>Motion Lock</span>
+      <strong id='dash-motion-lock'>--</strong>
+    </div>
+  </div>
+</section>
+{% endblock %}

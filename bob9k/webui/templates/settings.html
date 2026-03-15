@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class='card'>
+  <h2>Settings</h2>
+  <p>Servo trim lets you compensate for horn teeth that refuse to line up perfectly centered. Camera tuning helps fix weird color, washed-out image, and general Pi camera goblin behavior.</p>
+</section>
+
+<section class='card'>
+  <h3>Servo Trim</h3>
+  <div class='status-grid'>
+    <div>
+      <span>Steering Trim</span>
+      <div class='button-grid'>
+        <button data-trim-target='trim-steering' data-delta='-1'>-</button>
+        <input id='trim-steering' type='number' min='-20' max='20' step='1' value='0'>
+        <button data-trim-target='trim-steering' data-delta='1'>+</button>
+      </div>
+      <button id='test-steering-center'>Test Center</button>
+    </div>
+    <div>
+      <span>Camera Pan Trim</span>
+      <div class='button-grid'>
+        <button data-trim-target='trim-pan' data-delta='-1'>-</button>
+        <input id='trim-pan' type='number' min='-20' max='20' step='1' value='0'>
+        <button data-trim-target='trim-pan' data-delta='1'>+</button>
+      </div>
+    </div>
+    <div>
+      <span>Camera Tilt Trim</span>
+      <div class='button-grid'>
+        <button data-trim-target='trim-tilt' data-delta='-1'>-</button>
+        <input id='trim-tilt' type='number' min='-20' max='20' step='1' value='0'>
+        <button data-trim-target='trim-tilt' data-delta='1'>+</button>
+      </div>
+      <button id='test-camera-home'>Test Camera Home</button>
+    </div>
+  </div>
+  <div class='button-grid'>
+    <button id='save-servo-trims'>Save Trims</button>
+  </div>
+  <p id='settings-message' class='muted'>Loading trims…</p>
+</section>
+
+<section class='card'>
+  <h3>Camera Tuning</h3>
+  <p class='muted'>Preview uses the live rover camera feed. Saving camera settings will always restart the camera so the new values fully stick instead of pretending they did.</p>
+  <img
+    id='settings-camera-preview'
+    class='camera-stream camera-preview-small'
+    src='/video_feed?view=settings'
+    alt='Live camera preview for settings'
+  >
+  <div class='status-grid'>
+    <div>
+      <span>AWB Mode</span>
+      <select id='camera-awb-mode'>
+        <option value='auto'>Auto</option>
+        <option value='tungsten'>Tungsten</option>
+        <option value='fluorescent'>Fluorescent</option>
+        <option value='indoor'>Indoor</option>
+        <option value='daylight'>Daylight</option>
+        <option value='cloudy'>Cloudy</option>
+        <option value='custom'>Manual Gains</option>
+      </select>
+    </div>
+    <div>
+      <span>FPS</span>
+      <input id='camera-fps' type='range' min='5' max='30' step='1' value='20'>
+      <strong id='camera-fps-label'>20</strong>
+    </div>
+    <div>
+      <span>Brightness</span>
+      <input id='camera-brightness' type='range' min='-1' max='1' step='0.05' value='0'>
+      <strong id='camera-brightness-label'>0.00</strong>
+    </div>
+    <div>
+      <span>Contrast</span>
+      <input id='camera-contrast' type='range' min='0' max='4' step='0.05' value='1'>
+      <strong id='camera-contrast-label'>1.00</strong>
+    </div>
+    <div>
+      <span>Saturation</span>
+      <input id='camera-saturation' type='range' min='0' max='4' step='0.05' value='1'>
+      <strong id='camera-saturation-label'>1.00</strong>
+    </div>
+    <div>
+      <span>Sharpness</span>
+      <input id='camera-sharpness' type='range' min='0' max='4' step='0.05' value='1'>
+      <strong id='camera-sharpness-label'>1.00</strong>
+    </div>
+    <div>
+      <span>Exposure Compensation</span>
+      <input id='camera-exposure-compensation' type='range' min='-8' max='8' step='0.1' value='0'>
+      <strong id='camera-exposure-compensation-label'>0.00</strong>
+    </div>
+    <div>
+      <span>Manual Red Gain</span>
+      <input id='camera-manual-red-gain' type='number' min='0' max='32' step='0.1' value=''>
+    </div>
+    <div>
+      <span>Manual Blue Gain</span>
+      <input id='camera-manual-blue-gain' type='number' min='0' max='32' step='0.1' value=''>
+    </div>
+  </div>
+  <div class='button-grid'>
+    <button id='save-camera-settings'>Save Camera Settings</button>
+    <button id='reset-camera-settings'>Reset Camera Defaults</button>
+  </div>
+  <p id='camera-settings-message' class='muted'>Loading camera settings…</p>
+</section>
+{% endblock %}
