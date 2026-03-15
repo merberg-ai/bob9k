@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<<<<<<< HEAD
 <div style="display:flex; flex-direction:column; gap:14px;">
 
   <div class="card" id="debug-status-card">
@@ -85,5 +86,114 @@
   }
 
   document.addEventListener('DOMContentLoaded', pollDebug);
+=======
+<div class="row">
+    <div class="col col-lg-5">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>LIVE GAMEPAD DEBUG</span>
+                <span id="dbg-conn" class="badge bg-secondary">DISCONNECTED</span>
+            </div>
+            <div class="card-body">
+                <p class="text-secondary small mb-3">
+                    This page shows the raw evdev inputs coming off the controller. Wiggle a stick or squeeze a trigger and watch which axis actually moves. That tells us exactly what to map instead of guessing like maniacs.
+                </p>
+                <div class="row text-sm mb-2"><div class="col-4 text-muted">Device</div><div class="col-8" id="dbg-device">--</div></div>
+                <div class="row text-sm mb-2"><div class="col-4 text-muted">Path</div><div class="col-8"><code id="dbg-path">--</code></div></div>
+                <div class="row text-sm mb-2"><div class="col-4 text-muted">Last Button</div><div class="col-8"><code id="dbg-button">--</code></div></div>
+                <div class="row text-sm mb-3"><div class="col-4 text-muted">Last Event</div><div class="col-8" id="dbg-last-event">--</div></div>
+                <a href="/controller" class="btn btn-outline-primary w-100">Back to Controller Setup</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">CURRENT MAPPING</div>
+            <div class="card-body" id="dbg-mapping"></div>
+        </div>
+    </div>
+
+    <div class="col col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header">AXES</div>
+            <div class="card-body p-0">
+                <div style="overflow:auto;">
+                    <table class="table table-dark table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Axis</th>
+                                <th>Raw</th>
+                                <th>Norm</th>
+                                <th>Range</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dbg-axes"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">RECENT EVENTS</div>
+            <div class="card-body">
+                <div id="dbg-events" class="font-monospace small" style="max-height:360px; overflow:auto; white-space:pre-wrap;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function fmtTs(ts) {
+    if (!ts) return '--';
+    return new Date(ts * 1000).toLocaleTimeString();
+}
+
+function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function pollDebug() {
+    try {
+        const res = await fetch('/api/gamepad/debug');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'debug unavailable');
+
+        const badge = document.getElementById('dbg-conn');
+        badge.className = data.connected ? 'badge bg-success' : 'badge bg-secondary';
+        badge.textContent = data.connected ? 'CONNECTED' : 'DISCONNECTED';
+
+        document.getElementById('dbg-device').textContent = data.device_name || '--';
+        document.getElementById('dbg-path').textContent = data.device_path || '--';
+        document.getElementById('dbg-button').textContent = data.last_button || '--';
+        document.getElementById('dbg-last-event').textContent = fmtTs(data.last_event_ts);
+
+        const mapping = data.mapping || {};
+        document.getElementById('dbg-mapping').innerHTML = Object.entries(mapping).map(([k, v]) => (
+            `<div class="row text-sm mb-2"><div class="col-5 text-muted">${esc(k)}</div><div class="col-7"><code>${esc(v)}</code></div></div>`
+        )).join('') || '<span class="text-muted">No mapping loaded.</span>';
+
+        const axes = data.axis_state || {};
+        document.getElementById('dbg-axes').innerHTML = Object.entries(axes).map(([name, info]) => {
+            const range = info.range ? `${info.range.min}..${info.range.max}` : '--';
+            const norm = typeof info.normalized === 'number' ? info.normalized.toFixed(4) : '--';
+            return `<tr>
+                <td><code>${esc(name)}</code></td>
+                <td>${esc(info.raw)}</td>
+                <td>${esc(norm)}</td>
+                <td>${esc(range)}</td>
+            </tr>`;
+        }).join('');
+
+        const events = (data.recent_events || []).slice().reverse();
+        document.getElementById('dbg-events').innerHTML = events.map(ev => (
+            `[${fmtTs(ev.ts)}] ${esc(ev.kind)} ${esc(ev.name)} = ${esc(ev.value)}`
+        )).join('<br>') || '<span class="text-muted">No input yet.</span>';
+    } catch (err) {
+        document.getElementById('dbg-events').innerHTML = `<span class="text-danger">${esc(err.message || err)}</span>`;
+    }
+    setTimeout(pollDebug, 250);
+}
+
+document.addEventListener('DOMContentLoaded', pollDebug);
+>>>>>>> 8e1ddff7f283e2226df57327e7e42be2348b82f5
 </script>
 {% endblock %}

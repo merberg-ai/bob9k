@@ -36,9 +36,52 @@
       <button onclick="btCmd('scan_off')" style="flex:1; border:1px solid rgba(255,51,102,0.5); color:#ff6688; background:transparent; cursor:pointer;">Stop Scan</button>
     </div>
 
+<<<<<<< HEAD
     <div style="display:flex; gap:8px; margin-bottom:10px;">
       <input type="text" id="mac-input" style="flex:1;" placeholder="MAC: XX:XX:XX:XX:XX:XX">
       <button onclick="pairDevice()" style="border:1px solid rgba(255,179,71,0.5); color:#ffb347; background:transparent; cursor:pointer;">Pair &amp; Connect</button>
+=======
+    <!-- Right Column: Mappings and Status -->
+    <div class="col col-lg-6">
+        <div class="card mb-4" id="gamepad-status-card">
+            <div class="card-header d-flex justify-content-between">
+                <span>CONTROLLER STATUS</span>
+                <span id="conn-badge" class="badge bg-secondary">DISCONNECTED</span>
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="mb-2">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-color);">
+                        <line x1="6" y1="12" x2="10" y2="12"></line>
+                        <line x1="8" y1="10" x2="8" y2="14"></line>
+                        <line x1="15" y1="13" x2="15.01" y2="13"></line>
+                        <line x1="18" y1="11" x2="18.01" y2="11"></line>
+                        <path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"></path>
+                    </svg>
+                </div>
+                <h5 id="conn-text" class="text-muted">Awaiting connection...</h5>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                ACTIVE CONFIGURATION
+            </div>
+            <div class="card-body">
+                <p class="text-secondary small mb-3">
+                    The background <code>GamepadService</code> maps common inputs dynamically. Customize the mapping below to match your controller if it acts unexpectedly. Changes apply immediately.
+                </p>
+                <div class="d-flex gap-2 mb-4">
+                    <a href="/controller/debug" class="btn btn-outline-warning flex-fill">Open Live Debug</a>
+                </div>
+
+                <form id="mapping-form">
+                    <div id="mapping-fields"></div>
+                    <hr style="border-color: var(--border-color);">
+                    <button type="button" class="btn btn-outline-primary w-100" onclick="saveMapping()">Save Mapping Configuration</button>
+                </form>
+            </div>
+        </div>
+>>>>>>> 8e1ddff7f283e2226df57327e7e42be2348b82f5
     </div>
 
     <!-- Raw CLI -->
@@ -88,11 +131,160 @@
     setTimeout(pollBluetoothLogs, 1000);
   }
 
+<<<<<<< HEAD
   async function btCmd(cmd) {
     return fetch('/api/bluetooth/cmd', {
       method: 'POST',
       body: JSON.stringify({ cmd }),
       headers: {'Content-Type': 'application/json'}
+=======
+    async function btCmd(cmd) {
+        return fetch('/api/bluetooth/cmd', {
+            method: 'POST',
+            body: JSON.stringify({ cmd: cmd }),
+            headers: {'Content-Type': 'application/json'}
+        });
+    }
+
+    async function rawCmd() {
+        const inp = document.getElementById('raw-input');
+        if (!inp.value) return;
+        btCmd('raw');
+        await fetch('/api/bluetooth/cmd', {
+            method: 'POST',
+            body: JSON.stringify({ cmd: 'raw', raw_cmd: inp.value }),
+            headers: {'Content-Type': 'application/json'}
+        });
+        inp.value = '';
+    }
+
+    async function pairDevice() {
+        const mac = document.getElementById('mac-input').value.trim();
+        if (!mac) return alert("Enter a MAC Address first!");
+        
+        await btCmd('scan_off');
+        await fetch('/api/bluetooth/cmd', {
+            method: 'POST',
+            body: JSON.stringify({ cmd: 'pair', mac: mac }),
+            headers: {'Content-Type': 'application/json'}
+        });
+        document.getElementById('mac-input').value = '';
+    }
+
+    // Small loop to bind UI status to global telemetry
+    async function pollGamepadStatus() {
+        try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            
+            const badge = document.getElementById('conn-badge');
+            const txt = document.getElementById('conn-text');
+            const card = document.getElementById('gamepad-status-card');
+            
+            if (data.gamepad_connected) {
+                badge.className = 'badge bg-success';
+                badge.textContent = 'LINK ESTABLISHED';
+                txt.textContent = 'Gamepad is connected and mapped to drive systems.';
+                txt.className = 'text-success';
+                card.style.borderColor = '#198754';
+                card.style.boxShadow = '0 0 15px rgba(25, 135, 84, 0.2)';
+            } else {
+                badge.className = 'badge bg-secondary';
+                badge.textContent = 'DISCONNECTED';
+                txt.textContent = 'Awaiting connection...';
+                txt.className = 'text-muted';
+                card.style.borderColor = 'var(--border-color)';
+                card.style.boxShadow = 'none';
+            }
+        } catch(e) {}
+        setTimeout(pollGamepadStatus, 2500);
+    }
+
+    // Dynamic Mapping UI
+    const mappingConfig = [
+        { id: 'throttle_fwd', label: 'Drive Forward (Throttle)', type: 'axis' },
+        { id: 'throttle_rev', label: 'Drive Reverse (Brake)', type: 'axis' },
+        { id: 'steering', label: 'Steering (Left/Right)', type: 'axis' },
+        { id: 'pan', label: 'Camera Pan', type: 'axis' },
+        { id: 'tilt', label: 'Camera Tilt', type: 'axis' },
+        { id: 'lights_on', label: 'Headlights On', type: 'button' },
+        { id: 'lights_off', label: 'Headlights Off', type: 'button' },
+        { id: 'estop', label: 'Apply E-Stop', type: 'button' },
+        { id: 'clear_estop', label: 'Clear E-Stop', type: 'button' },
+        { id: 'steering_center', label: 'Center Steering', type: 'button' },
+        { id: 'camera_home', label: 'Center Camera', type: 'button' }
+    ];
+
+    const axisOptions = ['ABS_X', 'ABS_Y', 'ABS_Z', 'ABS_RX', 'ABS_RY', 'ABS_RZ', 'ABS_HAT0X', 'ABS_HAT0Y', 'ABS_GAS', 'ABS_BRAKE'];
+    const btnOptions = ['BTN_A', 'BTN_B', 'BTN_X', 'BTN_Y', 'BTN_TR', 'BTN_TL', 'BTN_THUMBR', 'BTN_THUMBL', 'BTN_SOUTH', 'BTN_EAST', 'BTN_NORTH', 'BTN_WEST', 'BTN_TR2', 'BTN_TL2'];
+
+    async function loadMapping() {
+        try {
+            const res = await fetch('/api/bluetooth/mapping');
+            const data = await res.json();
+            if (data.ok && data.mapping) {
+                renderMappingForm(data.mapping);
+            }
+        } catch(e) {}
+    }
+
+    function renderMappingForm(currentMapping) {
+        const container = document.getElementById('mapping-fields');
+        if (!container) return;
+        let html = '';
+        mappingConfig.forEach(item => {
+            const opts = item.type === 'axis' ? axisOptions : btnOptions;
+            const currentVal = currentMapping[item.id] || '';
+            
+            html += `<div class="row text-sm mb-2 align-items-center">
+                <div class="col-5 text-muted">${item.label}</div>
+                <div class="col-7">
+                    <select class="form-select form-select-sm bg-dark text-white border-secondary" id="map_${item.id}">
+                        <option value="">-- Unassigned --</option>
+                        ${opts.map(o => `<option value="${o}" ${o === currentVal ? 'selected' : ''}>${o}</option>`).join('')}
+                    </select>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    async function saveMapping() {
+        const newMap = {};
+        mappingConfig.forEach(item => {
+            const el = document.getElementById(`map_${item.id}`);
+            if (el && el.value) newMap[item.id] = el.value;
+        });
+        
+        try {
+            const res = await fetch('/api/bluetooth/mapping', {
+                method: 'POST',
+                body: JSON.stringify({ mapping: newMap }),
+                headers: {'Content-Type': 'application/json'}
+            });
+            const data = await res.json();
+            if (data.ok) alert("Mapping saved to configuration successfully!");
+            else alert("Error saving: " + data.error);
+        } catch(e) {
+            alert("Network error saving mapping.");
+        }
+    }
+
+    // Init
+    document.addEventListener("DOMContentLoaded", () => {
+        pollingLogs = true;
+        pollBluetoothLogs();
+        pollGamepadStatus();
+        loadMapping();
+        
+        // Let enter key submit raw commands
+        document.getElementById("raw-input").addEventListener("keypress", function(event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            rawCmd();
+          }
+        });
+>>>>>>> 8e1ddff7f283e2226df57327e7e42be2348b82f5
     });
   }
 
