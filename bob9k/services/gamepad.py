@@ -364,7 +364,6 @@ class GamepadService:
                     abs_code = abs_code[0]
                 self.axis_state[abs_code] = event.value
                 self.last_input_event = {'type': 'axis', 'code': abs_code, 'value': int(event.value), 'ts': time.time()}
-                self._process_axes()
 
     def _handle_button(self, keycode, is_down: bool):
         if not self.runtime or not self.runtime.registry:
@@ -453,6 +452,10 @@ class GamepadService:
                 if moved:
                     self.last_servo_update = time.monotonic()
             
+            # Continuously process all smoothed axis positions and motor states
+            if self.device is not None:
+                self._process_axes()
+
             time.sleep(self.servo_update_rate_s)
 
     def _set_motor_state(self, command: str, speed: int = 0) -> None:
@@ -494,9 +497,6 @@ class GamepadService:
             self._set_motor_state('backward', int(abs(net) * 100))
         else:
             self._set_motor_state('stop', 0)
-
-        if now - self.last_servo_update < self.servo_update_rate_s:
-            return
 
         # Steering: map stick position directly around configured center/range.
         steer_axis = m.get('steering', 'ABS_X')
