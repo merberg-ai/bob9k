@@ -210,17 +210,18 @@ class GamepadService:
                 break
 
             if event.type == evdev.ecodes.EV_KEY:
-                key_event = evdev.categorize(event)
-                key_name = key_event.keycode
+                key_name = evdev.ecodes.KEY.get(event.code)
                 if isinstance(key_name, list):
                     key_name = key_name[0]
+                if not key_name:
+                    key_name = f"BTN_{event.code}"
                 
                 # Expose the state so the frontend debug/mapping endpoints can read it
-                self.axis_state[key_name] = key_event.keystate
+                self.axis_state[key_name] = event.value
                 
-                if key_event.keystate == key_event.key_down:
+                if event.value == 1:
                     self._handle_button(key_name, is_down=True)
-                elif key_event.keystate == key_event.key_up:
+                elif event.value == 0:
                     self._handle_button(key_name, is_down=False)
 
             elif event.type == evdev.ecodes.EV_ABS:

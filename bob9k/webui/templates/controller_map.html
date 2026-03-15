@@ -180,7 +180,8 @@
       const isAxis = knownAxes.includes(key) || key.startsWith('ABS_');
       let ok = false;
       if (isBtn && diff >= 1 && val === 1) ok = true;
-      else if (isAxis && diff > 8000) ok = true;
+      else if (isAxis && diff > 100 && (key === 'ABS_Z' || key === 'ABS_RZ')) ok = true;
+      else if (isAxis && diff > 8000 && key !== 'ABS_Z' && key !== 'ABS_RZ') ok = true;
       else if (isAxis && diff > 200 && key.includes('HAT')) ok = true;
       if (!ok) continue;
       if (expectedType === 'button' && isAxis) continue;
