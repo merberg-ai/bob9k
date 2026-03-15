@@ -70,6 +70,7 @@
   let currentMapping = {};
   let isConnected = false;
   let activeListenId = null;
+  let listenStartTime = 0;
   let baselineState = null;
   let listenPollInterval = null;
   let activeAxisInfo = {};
@@ -152,6 +153,7 @@
     if (!status.connected) return;
     baselineState = status.axis_state || {};
     activeListenId = actionId;
+    listenStartTime = Date.now() / 1000;
     document.getElementById('listening-action-label').textContent = `Mapping: ${label}`;
     document.getElementById('live-input-debug').textContent = `Baseline captured. Move ${expectedType}...`;
     showListeningModal();
@@ -162,6 +164,7 @@
     if (listenPollInterval) clearInterval(listenPollInterval);
     listenPollInterval = null;
     activeListenId = null;
+    listenStartTime = 0;
     baselineState = null;
     hideListeningModal();
   }
@@ -173,28 +176,49 @@
     const currentState = status.axis_state;
     const dbgStr = Object.entries(currentState).filter(([k,v]) => {
       const base = baselineState[k] || 0;
-      return Math.abs(v - base) > 2000;
+      const d = Math.abs(v - base);
+      return (k.includes('ABS') && d > 2000) || (!k.includes('ABS') && d > 0);
     }).map(([k,v]) => `${k}:${v}`).join(' | ');
     document.getElementById('live-input-debug').textContent = dbgStr || 'No active inputs...';
 
     let detected = null;
-    for (const [key, val] of Object.entries(currentState)) {
-      const base = baselineState[key] || 0;
-      const diff = Math.abs(val - base);
-      const isBtn = knownBtns.includes(key) || key.startsWith('BTN_');
-      const isAxis = knownAxes.includes(key) || key.startsWith('ABS_');
-      const info = activeAxisInfo[key] || [0, 0, 0];
-      const flat = Array.isArray(info) ? (info[2] || 0) : 0;
-      let ok = false;
-      if (isBtn && diff >= 1 && val === 1) ok = true;
-      else if (isAxis && key.includes('HAT') && diff >= 1) ok = true;
-      else if (isAxis && (key === 'ABS_Z' || key === 'ABS_RZ' || key === 'ABS_GAS' || key === 'ABS_BRAKE') && diff >= Math.max(64, flat + 16)) ok = true;
-      else if (isAxis && diff >= Math.max(8000, flat * 2, 2048)) ok = true;
-      if (!ok) continue;
-      if (expectedType === 'button' && isAxis) continue;
-      if (expectedType === 'axis' && isBtn) continue;
-      detected = key;
-      break;
+
+    // Check explicitly captured last event to not miss quick clicks
+    if (status.last_input_event && status.last_input_event.ts > listenStartTime) {
+      const evt = status.last_input_event;
+      if (typeof evt.code === 'string') {
+        const isBtnEvt = evt.type === 'button' || knownBtns.includes(evt.code) || evt.code.startsWith('BTN_') || evt.code.startsWith('KEY_');
+        const isAxisEvt = evt.type === 'axis' || knownAxes.includes(evt.code) || evt.code.startsWith('ABS_');
+        if (expectedType === 'button' && (isBtnEvt || (isAxisEvt && evt.code.includes('HAT')))) {
+          if (Math.abs(evt.value - (baselineState[evt.code] || 0)) >= 1) {
+            detected = evt.code;
+          }
+        }
+      }
+    }
+
+    if (!detected) {
+      for (const [key, val] of Object.entries(currentState)) {
+        const base = baselineState[key] || 0;
+        const diff = Math.abs(val - base);
+        const isBtn = knownBtns.includes(key) || key.startsWith('BTN_') || key.startsWith('KEY_');
+        const isAxis = knownAxes.includes(key) || key.startsWith('ABS_');
+        const info = activeAxisInfo[key] || [0, 0, 0];
+        const flat = Array.isArray(info) ? (info[2] || 0) : 0;
+        let ok = false;
+        
+        if (isBtn && diff >= 1 && val === 1) ok = true;
+        else if (isAxis && key.includes('HAT') && diff >= 1) ok = true;
+        else if (isAxis && (key === 'ABS_Z' || key === 'ABS_RZ' || key === 'ABS_GAS' || key === 'ABS_BRAKE') && diff >= Math.max(64, flat + 16)) ok = true;
+        else if (isAxis && diff >= Math.max(8000, flat * 2, 2048)) ok = true;
+        
+        if (!ok) continue;
+        if (expectedType === 'button' && isAxis && !key.includes('HAT')) continue;
+        if (expectedType === 'axis' && isBtn) continue;
+        
+        detected = key;
+        break;
+      }
     }
 
     if (detected) {
