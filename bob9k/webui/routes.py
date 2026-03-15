@@ -13,6 +13,8 @@ def register_webui_routes(app: Flask) -> None:
     def settings(): return render_template('settings.html', page='settings')
     @app.get('/controller')
     def controller(): return render_template('controller.html', page='controller')
+    @app.get('/controller/debug')
+    def controller_debug(): return render_template('controller_debug.html', page='controller')
     @app.get('/system')
     def system(): return render_template('system.html', page='system')
     @app.get('/ai')

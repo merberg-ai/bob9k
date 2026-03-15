@@ -44,6 +44,15 @@ def register_bluetooth_routes(app: Flask) -> None:
             'logs': bt.get_logs()
         }
 
+
+
+    @app.get('/api/gamepad/debug')
+    def get_gamepad_debug():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        if getattr(runtime, 'gamepad', None):
+            return runtime.gamepad.get_debug_snapshot()
+        return {'ok': False, 'error': 'Gamepad service not running'}
+
     @app.get('/api/bluetooth/mapping')
     def get_gamepad_mapping():
         runtime = current_app.config['BOB9K_RUNTIME']

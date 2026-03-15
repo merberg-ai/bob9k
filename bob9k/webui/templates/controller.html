@@ -67,9 +67,12 @@
                 ACTIVE CONFIGURATION
             </div>
             <div class="card-body">
-                <p class="text-secondary small mb-4">
+                <p class="text-secondary small mb-3">
                     The background <code>GamepadService</code> maps common inputs dynamically. Customize the mapping below to match your controller if it acts unexpectedly. Changes apply immediately.
                 </p>
+                <div class="d-flex gap-2 mb-4">
+                    <a href="/controller/debug" class="btn btn-outline-warning flex-fill">Open Live Debug</a>
+                </div>
 
                 <form id="mapping-form">
                     <div id="mapping-fields"></div>
@@ -198,7 +201,7 @@
         { id: 'camera_home', label: 'Center Camera', type: 'button' }
     ];
 
-    const axisOptions = ['ABS_X', 'ABS_Y', 'ABS_Z', 'ABS_RX', 'ABS_RY', 'ABS_RZ', 'ABS_HAT0X', 'ABS_HAT0Y'];
+    const axisOptions = ['ABS_X', 'ABS_Y', 'ABS_Z', 'ABS_RX', 'ABS_RY', 'ABS_RZ', 'ABS_HAT0X', 'ABS_HAT0Y', 'ABS_GAS', 'ABS_BRAKE'];
     const btnOptions = ['BTN_A', 'BTN_B', 'BTN_X', 'BTN_Y', 'BTN_TR', 'BTN_TL', 'BTN_THUMBR', 'BTN_THUMBL', 'BTN_SOUTH', 'BTN_EAST', 'BTN_NORTH', 'BTN_WEST', 'BTN_TR2', 'BTN_TL2'];
 
     async function loadMapping() {
