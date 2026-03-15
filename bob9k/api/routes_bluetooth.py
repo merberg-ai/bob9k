@@ -2,6 +2,7 @@ from __future__ import annotations
 from flask import Flask, current_app, request
 from bob9k.services.bluetooth_manager import BluetoothManager
 from bob9k.config import load_runtime_config, save_runtime_config
+from bob9k.services.gamepad import GamepadService
 
 def register_bluetooth_routes(app: Flask) -> None:
     @app.post('/api/bluetooth/cmd')
@@ -81,3 +82,55 @@ def register_bluetooth_routes(app: Flask) -> None:
         runtime.config['gamepad_mapping'] = new_map
         
         return {'ok': True}
+
+    @app.post('/api/bluetooth/mapping/reset')
+    def reset_gamepad_mapping():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        
+        # Build the pristine default mapping
+        default_map = GamepadService.DEFAULT_MAPPING.copy()
+        
+        # Apply to live service
+        if getattr(runtime, 'gamepad', None):
+            runtime.gamepad.mapping = default_map
+            
+        # Apply to persistent config
+        cfg = load_runtime_config()
+        cfg['gamepad_mapping'] = default_map
+        save_runtime_config(cfg)
+        
+        # Apply to runtime config memory
+        runtime.config['gamepad_mapping'] = default_map
+        
+        return {'ok': True, 'mapping': default_map}
+
+    @app.get('/api/bluetooth/debug')
+    def get_gamepad_debug():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        gamepad = getattr(runtime, 'gamepad', None)
+        if not gamepad:
+            return {'ok': False, 'connected': False, 'error': 'Gamepad service not running'}
+
+        device = getattr(gamepad, 'device', None)
+        payload = {
+            'ok': True,
+            'connected': device is not None,
+            'mapping': gamepad.mapping,
+            'axis_state': gamepad.axis_state,
+            'axis_info': gamepad.axis_info,
+            'available_axes': getattr(gamepad, 'available_axes', []),
+            'available_buttons': getattr(gamepad, 'available_buttons', []),
+            'last_input_event': getattr(gamepad, 'last_input_event', None),
+            'last_device_scan': getattr(gamepad, 'last_device_scan', []),
+            'steer_target': gamepad._steer_target,
+            'pan_target': gamepad._pan_target,
+            'tilt_target': gamepad._tilt_target,
+            'last_motor_cmd': gamepad._last_motor_cmd,
+        }
+        if device is not None:
+            payload.update({
+                'device_name': device.name,
+                'device_path': getattr(device, 'path', None),
+                'device_phys': getattr(device, 'phys', None),
+            })
+        return payload

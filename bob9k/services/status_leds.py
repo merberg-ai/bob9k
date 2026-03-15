@@ -73,6 +73,44 @@ class StatusLedService:
         self.custom_color = [int(r), int(g), int(b)]
         self.apply()
 
+    def cycle_preset(self) -> None:
+        # These correspond to the exact order of buttons in the Lights UI tab
+        # Off -> Green(READY) -> Red(ERROR) -> Blue(Custom) -> White(Custom) -> Police -> Custom Slot
+        cycle = [
+            {'type': 'state', 'val': 'OFF'},
+            {'type': 'state', 'val': 'READY'},
+            {'type': 'state', 'val': 'ERROR'},
+            {'type': 'color', 'val': [0, 0, 255]},      # Blue
+            {'type': 'color', 'val': [255, 255, 255]},  # White
+            {'type': 'state', 'val': 'POLICE'},
+            {'type': 'custom_slot', 'val': None}        # User's customize slot
+        ]
+        
+        # Determine current index
+        current_index = -1
+        for i, preset in enumerate(cycle):
+            if preset['type'] == 'state' and self.current_state == preset['val']:
+                current_index = i
+                break
+            elif preset['type'] == 'color' and self.current_state == 'CUSTOM' and self.custom_color == preset['val']:
+                current_index = i
+                break
+            elif preset['type'] == 'custom_slot' and self.current_state == 'CUSTOM':
+                # Only match the custom slot if we didn't match the explicitly defined custom colors above
+                current_index = i
+                
+        next_index = (current_index + 1) % len(cycle)
+        next_preset = cycle[next_index]
+        
+        if next_preset['type'] == 'state':
+            self.set_state(next_preset['val'])
+        elif next_preset['type'] == 'color':
+            self.set_custom_color(*next_preset['val'])
+        elif next_preset['type'] == 'custom_slot':
+            # Fallback to purple if they haven't picked a custom color yet, to distinguish from white/blue
+            color = self.custom_color if self.custom_color not in ([0,0,255], [255,255,255], None) else [255, 0, 255]
+            self.set_custom_color(*color)
+
     def clear_custom(self) -> None:
         self.custom_color = None
         self.set_state('READY')

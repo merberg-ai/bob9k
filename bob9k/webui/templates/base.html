@@ -3,7 +3,9 @@
 <head>
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>
-  <title>bob9k</title>
+  <title>bob9k{% if page %} · {{ page }}{% endif %}</title>
+  <link rel='preconnect' href='https://fonts.googleapis.com'>
+  <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
   <link rel='stylesheet' href='{{ url_for("static", filename="css/base.css") }}'>
   <link rel='stylesheet' href='{{ url_for("static", filename="css/layout.css") }}'>
   <link rel='stylesheet' href='{{ url_for("static", filename="css/cards.css") }}'>
@@ -11,17 +13,21 @@
   <link rel='stylesheet' href='{{ url_for("static", filename="css/theme.css") }}'>
 </head>
 <body data-page='{{ page }}'>
+
+  <!-- Slim Top Bar -->
   <header class='app-header'>
-    <div>
-      <h1>bob9k</h1>
-      <p class='muted'>mobile-first robot control</p>
-    </div>
+    <span class='header-title'>{{ page | upper if page else 'bob9k' }}</span>
     <div class='header-actions'>
+      <div class='header-batt-mini'>
+        <div class='batt-bar-mini'><div id='batt-mini-fill' class='batt-bar-mini-fill'></div></div>
+        <span id='batt-mini-label'>--%</span>
+      </div>
       <button data-action='global-estop' class='danger estop-button'>E-STOP</button>
       <div id='status-pill' class='status-pill status-ready'>connecting</div>
     </div>
   </header>
 
+  <!-- Telemetry Banner (Dashboard only — hidden elsewhere via CSS) -->
   <section id='telemetry-banner' class='telemetry-banner card telemetry-banner-ready'>
     <div class='telemetry-banner-top'>
       <div>
@@ -69,21 +75,32 @@
   </section>
 
   <main class='page-content'>{% block content %}{% endblock %}</main>
+
+  <!-- Bottom Nav / Sidebar -->
   <nav class='bottom-nav'>
-    <a href='/' class='nav-item {% if page=="dashboard" %}active{% endif %}'>Dash</a>
-    <a href="/control" class="nav-item {% if page == 'control' %}active{% endif %}">
-        <span class="icon">✜</span> Control
+    <a href='/' class='nav-item {% if page=="dashboard" %}active{% endif %}'>
+      <span class='nav-icon'>📡</span>Dash
     </a>
-    <a href="/controller" class="nav-item {% if page == 'controller' %}active{% endif %}">
-        <span class="icon">🎮</span> Controller
+    <a href='/control' class='nav-item {% if page=="control" %}active{% endif %}'>
+      <span class='nav-icon'>✜</span>Control
     </a>
-    <a href="/lights" class="nav-item {% if page == 'lights' %}active{% endif %}">
-        <span class="icon">💡</span> Lights
+    <a href='/controller' class='nav-item {% if page=="controller" or page=="controller_debug" or page=="controller_map" %}active{% endif %}'>
+      <span class='nav-icon'>🎮</span>Gamepad
     </a>
-    <a href='/settings' class='nav-item {% if page=="settings" %}active{% endif %}'>Settings</a>
-    <a href='/system' class='nav-item {% if page=="system" %}active{% endif %}'>System</a>
-    <a href='/ai' class='nav-item {% if page=="ai" %}active{% endif %}'>AI</a>
+    <a href='/lights' class='nav-item {% if page=="lights" %}active{% endif %}'>
+      <span class='nav-icon'>💡</span>Lights
+    </a>
+    <a href='/remote' class='nav-item {% if page=="remote" %}active{% endif %}'>
+      <span class='nav-icon'>🎯</span>HUD
+    </a>
+    <a href='/settings' class='nav-item {% if page=="settings" %}active{% endif %}'>
+      <span class='nav-icon'>⚙️</span>Settings
+    </a>
+    <a href='/system' class='nav-item {% if page=="system" %}active{% endif %}'>
+      <span class='nav-icon'>🖥</span>System
+    </a>
   </nav>
+
   <script src='{{ url_for("static", filename="js/api.js") }}'></script>
   <script src='{{ url_for("static", filename="js/core.js") }}'></script>
   <script src='{{ url_for("static", filename="js/dashboard.js") }}'></script>
@@ -92,5 +109,28 @@
   <script src='{{ url_for("static", filename="js/settings.js") }}'></script>
   <script src='{{ url_for("static", filename="js/system.js") }}'></script>
   <script src='{{ url_for("static", filename="js/ai.js") }}'></script>
+
+  <!-- Mini battery bar sync (mirrors core.js telemetry) -->
+  <script>
+    (function() {
+      // Sync mini battery bar from telemetry — lightweight, non-blocking
+      const fill = document.getElementById('batt-mini-fill');
+      const label = document.getElementById('batt-mini-label');
+      async function syncBatt() {
+        try {
+          const d = await fetch('/api/status').then(r => r.json());
+          const pct = d.battery_percent ?? 0;
+          if (fill) {
+            fill.style.width = pct + '%';
+            fill.className = 'batt-bar-mini-fill' +
+              (pct <= 15 ? ' is-critical' : pct <= 30 ? ' is-low' : '');
+          }
+          if (label) label.textContent = pct + '%';
+        } catch(e) {}
+        setTimeout(syncBatt, 5000);
+      }
+      syncBatt();
+    })();
+  </script>
 </body>
 </html>
