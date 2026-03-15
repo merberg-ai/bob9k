@@ -73,6 +73,22 @@ class StatusLedService:
         self.custom_color = [int(r), int(g), int(b)]
         self.apply()
 
+    def cycle_preset(self) -> None:
+        cycle = ['OFF', 'ERROR', 'READY', 'BLUE', 'WHITE', 'CUSTOM']
+        try:
+            current_index = cycle.index(self.current_state)
+        except ValueError:
+            current_index = -1
+            
+        next_index = (current_index + 1) % len(cycle)
+        next_state = cycle[next_index]
+        
+        # We need a fallback color for 'CUSTOM' if they haven't set one yet
+        if next_state == 'CUSTOM' and self.custom_color is None:
+            self.custom_color = [255, 0, 255] # Default to Purple so they know it works
+            
+        self.set_state(next_state)
+
     def clear_custom(self) -> None:
         self.custom_color = None
         self.set_state('READY')

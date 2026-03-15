@@ -76,7 +76,7 @@ class GamepadService:
         self.trigger_deadzone = float(cfg.get('gamepad_trigger_deadzone', 0.06))
         self.servo_update_rate_s = float(cfg.get('gamepad_servo_update_rate_s', 0.05))
         self.steering_alpha = float(cfg.get('gamepad_steering_alpha', 0.35))
-        self.camera_alpha = float(cfg.get('gamepad_camera_alpha', 0.35))
+        self.camera_alpha = float(cfg.get('gamepad_camera_alpha', 0.15))
 
         self.axis_state = {
             'ABS_X': 0, 'ABS_Y': 0,
@@ -406,13 +406,9 @@ class GamepadService:
                 self.logger.warning("Gamepad: E-STOP triggered by button toggle!")
 
         elif is_mapped('lights_toggle'):
-            if reg.lights:
-                if reg.lights.is_on:
-                    reg.lights.off()
-                    self.logger.info("Gamepad: Lights toggled OFF")
-                else:
-                    reg.lights.set_custom_color(255, 255, 255)
-                    self.logger.info("Gamepad: Lights toggled ON")
+            if reg.status_leds:
+                reg.status_leds.cycle_preset()
+                self.logger.info("Gamepad: Lights cycled to next preset")
 
         elif is_mapped('camera_home'):
             if reg.camera_servo:
