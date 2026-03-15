@@ -56,32 +56,31 @@ class TrackingService:
             if getattr(self.runtime.registry.motors, 'motion_locked', False) or getattr(self.runtime.registry.motors, 'estop_latched', False):
                 self.disable()
                 continue
-            
-            # Phase 1: Ultrasonic distance tracking
+            # Stop motors if they were moving
+            if self.runtime.registry.motors.state != 'stopped':
+                self.runtime.registry.motors.stop()
+
+            # Phase 1: Ultrasonic distance tracking (mapped to camera pan/tilt instead of wheels)
             ultrasonic = self.runtime.registry.ultrasonic
-            if not ultrasonic:
-                self.logger.warning("Tracking needs ultrasonic sensor, but none found. Disabling.")
+            camera_servo = self.runtime.registry.camera_servo
+            if not ultrasonic or not camera_servo:
+                self.logger.warning("Tracking needs ultrasonic & camera servo, but missing. Disabling.")
                 self.disable()
                 continue
                 
             distance_cm = ultrasonic.read_cm()
             if distance_cm is None:
-                # No object detected. Stop motors to be safe.
-                if self.runtime.registry.motors.state != 'stopped':
-                    self.runtime.registry.motors.stop()
                 continue
                 
             error = distance_cm - self.target_distance_cm
             
             if abs(error) <= self.distance_tolerance_cm:
-                if self.runtime.registry.motors.state != 'stopped':
-                    self.runtime.registry.motors.stop()
+                pass # Target is at perfect distance, keep camera still
             elif error > 0:
-                speed = min(90, 40 + int(error))
-                if not self.runtime.registry.motors.motion_locked:
-                    self.runtime.registry.motors.forward(speed)
+                # Object is farther than target, pan left (arbitrary mapping, usually we'd track visually)
+                camera_servo.pan_left()
+                self.runtime.state.pan_angle = camera_servo.pan_angle
             else:
-                speed = min(90, 40 + int(abs(error)))
-                if not self.runtime.registry.motors.motion_locked:
-                    self.runtime.registry.motors.backward(speed)
-
+                # Object is closer than target, pan right 
+                camera_servo.pan_right()
+                self.runtime.state.pan_angle = camera_servo.pan_angle

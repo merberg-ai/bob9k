@@ -23,6 +23,7 @@
         <span id='batt-mini-label'>--%</span>
       </div>
       <button data-action='global-estop' class='danger estop-button'>E-STOP</button>
+      <div id='tracking-pill' class='status-pill' style='display:none; border-color:rgba(0,255,204,0.4); color:var(--accent); margin-right:6px;'>TRACKING</div>
       <div id='status-pill' class='status-pill status-ready'>connecting</div>
     </div>
   </header>
@@ -126,8 +127,13 @@
               (pct <= 15 ? ' is-critical' : pct <= 30 ? ' is-low' : '');
           }
           if (label) label.textContent = pct + '%';
+          
+          const trPill = document.getElementById('tracking-pill');
+          if (trPill) {
+            trPill.style.display = d.tracking_enabled ? 'flex' : 'none';
+          }
         } catch(e) {}
-        setTimeout(syncBatt, 5000);
+        setTimeout(syncBatt, 2000);
       }
       syncBatt();
     })();
