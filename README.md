@@ -24,6 +24,8 @@ Version 1.1 brings drastically improved controller support, custom RGB headlight
   - Dynamic right-stick camera mappings with **Cinematic Smoothing**.
   - Interactive Web UI to test inputs and natively remap any axis/button on the fly.
   - Quick-toggle cycle for Headlight states (Off -> Green -> Red -> Blue -> White -> Police -> Custom).
+- 🤖 **Computer Vision Object Tracking**: Proportional OpenCV Haar Cascade face tracking loop to automatically keep targets centered using smooth pan/tilt servo adjustments.
+- 🎥 **Tuned Camera Streaming**: Upgraded picamera2 integration with improved default exposure and contrast parameters to avoid washed-out streams.
 - 🕹️ **API First Design**: Complete RESTful interface for external control and scripting.
 
 ## 🛠️ Hardware Requirements
