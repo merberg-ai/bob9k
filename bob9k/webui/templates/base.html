@@ -94,6 +94,9 @@
     <a href='/remote' class='nav-item {% if page=="remote" %}active{% endif %}'>
       <span class='nav-icon'>🎯</span>HUD
     </a>
+    <a href='/tracking' class='nav-item {% if page=="tracking" %}active{% endif %}'>
+      <span class='nav-icon'>👀</span>Tracking
+    </a>
     <a href='/settings' class='nav-item {% if page=="settings" %}active{% endif %}'>
       <span class='nav-icon'>⚙️</span>Settings
     </a>
@@ -108,6 +111,7 @@
   <script src='{{ url_for("static", filename="js/control.js") }}'></script>
   <script src='{{ url_for("static", filename="js/lights.js") }}'></script>
   <script src='{{ url_for("static", filename="js/settings.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/tracking.js") }}'></script>
   <script src='{{ url_for("static", filename="js/system.js") }}'></script>
   <script src='{{ url_for("static", filename="js/ai.js") }}'></script>
 

@@ -66,18 +66,6 @@
     </div>
   </div>
 
-  <!-- Object Tracking -->
-  <div class="card" id="dash-tracking-card">
-    <div class="card-header">
-      <span>Object Tracking</span>
-      <span id="dash-tracking-badge" class="status-pill" style="border-color:rgba(255,255,255,0.15); color:var(--muted);">DISABLED</span>
-    </div>
-    <p class="muted" style="margin:0; font-size:0.85rem;">When enabled, Bob9k will maintain distance from objects in front of its ultrasonic sensor.</p>
-    <div style="margin-top:12px; display:flex; gap:10px;">
-      <button onclick="toggleTracking()" id="btn-tracking" style="flex:1; padding:10px; border:1px solid var(--border); border-radius:10px; background:transparent; color:var(--text); font-weight:700; cursor:pointer;">Enable Tracking</button>
-    </div>
-  </div>
-
 </div>
 
 <script>
@@ -114,28 +102,6 @@
         badge.style.borderColor = 'rgba(255,255,255,0.12)';
         txt.textContent = 'No controller detected. Pair one on the Gamepad tab.';
         card.style.borderColor = 'var(--border)';
-      }
-
-      // Tracking
-      const trBadge = document.getElementById('dash-tracking-badge');
-      const trCard = document.getElementById('dash-tracking-card');
-      const trBtn = document.getElementById('btn-tracking');
-      if (d.tracking_enabled) {
-        trBadge.textContent = 'ENABLED';
-        trBadge.style.color = 'var(--accent)';
-        trBadge.style.borderColor = 'rgba(0,255,204,0.4)';
-        trCard.style.borderColor = 'rgba(0,255,204,0.2)';
-        trBtn.textContent = 'Disable Tracking';
-        trBtn.style.color = '#ff3366';
-        trBtn.style.borderColor = 'rgba(255,51,102,0.4)';
-      } else {
-        trBadge.textContent = 'DISABLED';
-        trBadge.style.color = 'var(--muted)';
-        trBadge.style.borderColor = 'rgba(255,255,255,0.12)';
-        trCard.style.borderColor = 'var(--border)';
-        trBtn.textContent = 'Enable Tracking';
-        trBtn.style.color = 'var(--text)';
-        trBtn.style.borderColor = 'var(--border)';
       }
 
     } catch(e) {}

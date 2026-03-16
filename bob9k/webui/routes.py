@@ -11,6 +11,8 @@ def register_webui_routes(app: Flask) -> None:
     def lights(): return render_template('lights.html', page='lights')
     @app.get('/settings')
     def settings(): return render_template('settings.html', page='settings')
+    @app.get('/tracking')
+    def tracking(): return render_template('tracking.html', page='tracking')
     @app.get('/controller')
     def controller(): return render_template('controller.html', page='controller')
     @app.get('/controller/debug')
