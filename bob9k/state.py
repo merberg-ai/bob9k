@@ -16,3 +16,7 @@ class RuntimeState:
     tilt_angle: int = 90
     telemetry: dict[str, Any] = field(default_factory=dict)
     tracking_enabled: bool = False
+    tracking_mode: str = 'camera_track'
+    tracking_detector: str = 'haar_face'
+    tracking_target_acquired: bool = False
+    tracking_disable_reason: str | None = None

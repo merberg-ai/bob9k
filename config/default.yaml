@@ -130,3 +130,19 @@ camera:
   exposure_compensation: 0.0
   manual_red_gain: null
   manual_blue_gain: null
+
+
+tracking:
+  enabled: false
+  mode: camera_track
+  detector: haar_face
+  target_label: face
+  pan_gain: 0.05
+  tilt_gain: 0.05
+  x_deadzone_px: 64
+  y_deadzone_px: 48
+  smoothing_alpha: 0.4
+  scan_when_lost: false
+  lost_timeout_s: 2.0
+  target_distance_cm: 30.0
+  distance_tolerance_cm: 5.0
