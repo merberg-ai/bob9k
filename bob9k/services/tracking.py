@@ -46,8 +46,16 @@ class TrackingService:
             self.enable()
 
     def _tracking_loop(self):
+        try:
+            import cv2
+            import numpy as np
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        except ImportError:
+            self.logger.error("OpenCV or Numpy not installed. Tracking disabled.")
+            return
+
         while not self._stop_event.is_set():
-            time.sleep(0.1)
+            time.sleep(0.05)
             
             if not self.runtime.state.tracking_enabled:
                 continue
@@ -57,30 +65,85 @@ class TrackingService:
                 self.disable()
                 continue
             # Stop motors if they were moving
-            if self.runtime.registry.motors.state != 'stopped':
+            if getattr(self.runtime.registry.motors, 'state', 'stopped') != 'stopped':
                 self.runtime.registry.motors.stop()
 
-            # Phase 1: Ultrasonic distance tracking (mapped to camera pan/tilt instead of wheels)
-            ultrasonic = self.runtime.registry.ultrasonic
-            camera_servo = self.runtime.registry.camera_servo
-            if not ultrasonic or not camera_servo:
-                self.logger.warning("Tracking needs ultrasonic & camera servo, but missing. Disabling.")
+            camera = getattr(self.runtime.registry, 'camera', None)
+            camera_servo = getattr(self.runtime.registry, 'camera_servo', None)
+            
+            if not camera or not camera_servo:
+                self.logger.warning("Tracking needs camera & camera_servo, but missing. Disabling.")
                 self.disable()
                 continue
                 
-            distance_cm = ultrasonic.read_cm()
-            if distance_cm is None:
+            frame_bytes = camera.get_frame()
+            if not frame_bytes:
                 continue
                 
-            error = distance_cm - self.target_distance_cm
-            
-            if abs(error) <= self.distance_tolerance_cm:
-                pass # Target is at perfect distance, keep camera still
-            elif error > 0:
-                # Object is farther than target, pan left (arbitrary mapping, usually we'd track visually)
-                camera_servo.pan_left()
-                self.runtime.state.pan_angle = camera_servo.pan_angle
-            else:
-                # Object is closer than target, pan right 
-                camera_servo.pan_right()
-                self.runtime.state.pan_angle = camera_servo.pan_angle
+            try:
+                np_arr = np.frombuffer(frame_bytes, np.uint8)
+                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if frame is None:
+                    continue
+                    
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+                
+                if len(faces) > 0:
+                    # Find the largest face
+                    faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
+                    x, y, w, h = faces[0]
+                    
+                    face_center_x = x + w / 2
+                    face_center_y = y + h / 2
+                    
+                    frame_h, frame_w = frame.shape[:2]
+                    frame_center_x = frame_w / 2
+                    frame_center_y = frame_h / 2
+                    
+                    offset_x = face_center_x - frame_center_x
+                    offset_y = face_center_y - frame_center_y
+                    
+                    deadzone_x = frame_w * 0.1
+                    deadzone_y = frame_h * 0.1
+                    
+                    p_gain_pan = 0.05
+                    p_gain_tilt = 0.05
+                    
+                    current_pan = camera_servo.pan_angle
+                    current_tilt = camera_servo.tilt_angle
+                    
+                    target_pan = current_pan
+                    target_tilt = current_tilt
+
+                    # Calculate target pan
+                    if abs(offset_x) > deadzone_x:
+                        delta_pan = offset_x * p_gain_pan
+                        if getattr(camera_servo, 'pan_invert', False):
+                            delta_pan = -delta_pan
+                        target_pan += delta_pan
+                        
+                    # Calculate target tilt
+                    if abs(offset_y) > deadzone_y:
+                        delta_tilt = offset_y * p_gain_tilt
+                        if getattr(camera_servo, 'tilt_invert', False):
+                            delta_tilt = -delta_tilt
+                        target_tilt += delta_tilt
+                        
+                    # Apply low-pass filtering
+                    alpha = 0.4
+                    new_pan = (alpha * target_pan) + ((1 - alpha) * current_pan)
+                    new_tilt = (alpha * target_tilt) + ((1 - alpha) * current_tilt)
+                    
+                    # Clamp angles
+                    new_pan = max(0, min(180, new_pan))
+                    new_tilt = max(0, min(180, new_tilt))
+                    
+                    # Set new angles
+                    camera_servo.set_pan(new_pan)
+                    camera_servo.set_tilt(new_tilt)
+                    
+                    self.runtime.state.pan_angle = camera_servo.pan_angle
+                    
+            except Exception as e:
+                self.logger.error(f"Error in tracking loop: {e}")
