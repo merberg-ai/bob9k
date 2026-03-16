@@ -17,11 +17,11 @@ AWB_MODE_OPTIONS = [
 ]
 
 CAMERA_FIELDS: dict[str, dict[str, Any]] = {
-    "brightness": {"type": "float", "min": -1.0, "max": 1.0, "default": 0.0},
-    "contrast": {"type": "float", "min": 0.0, "max": 32.0, "default": 1.0},
-    "saturation": {"type": "float", "min": 0.0, "max": 32.0, "default": 1.0},
+    "brightness": {"type": "float", "min": -1.0, "max": 1.0, "default": -0.05},
+    "contrast": {"type": "float", "min": 0.0, "max": 32.0, "default": 1.15},
+    "saturation": {"type": "float", "min": 0.0, "max": 32.0, "default": 1.1},
     "sharpness": {"type": "float", "min": 0.0, "max": 16.0, "default": 1.0},
-    "exposure_compensation": {"type": "float", "min": -8.0, "max": 8.0, "default": 0.0},
+    "exposure_compensation": {"type": "float", "min": -8.0, "max": 8.0, "default": -1.0},
     "awb_mode": {"type": "enum", "choices": [item["value"] for item in AWB_MODE_OPTIONS], "default": "auto"},
     "manual_red_gain": {"type": "float_or_none", "min": 0.0, "max": 32.0, "default": None},
     "manual_blue_gain": {"type": "float_or_none", "min": 0.0, "max": 32.0, "default": None},

@@ -54,6 +54,8 @@ class TrackingService:
             self.logger.error("OpenCV or Numpy not installed. Tracking disabled.")
             return
 
+        last_log_time = 0
+
         while not self._stop_event.is_set():
             time.sleep(0.05)
             
@@ -90,9 +92,11 @@ class TrackingService:
                 faces = face_cascade.detectMultiScale(gray, 1.1, 4)
                 
                 if len(faces) > 0:
+                    self.logger.info(f"Tracking: Detected {len(faces)} face(s)")
                     # Find the largest face
                     faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
                     x, y, w, h = faces[0]
+                    self.logger.debug(f"Tracking: Tracking largest face at ({x},{y}) size {w}x{h}")
                     
                     face_center_x = x + w / 2
                     face_center_y = y + h / 2
@@ -139,11 +143,18 @@ class TrackingService:
                     new_pan = max(0, min(180, new_pan))
                     new_tilt = max(0, min(180, new_tilt))
                     
+                    self.logger.debug(f"Tracking: Setting pan={new_pan:.1f}, tilt={new_tilt:.1f}")
                     # Set new angles
                     camera_servo.set_pan(new_pan)
                     camera_servo.set_tilt(new_tilt)
                     
                     self.runtime.state.pan_angle = camera_servo.pan_angle
                     
+                else:
+                    now = time.time()
+                    if now - last_log_time > 2.0:
+                        self.logger.info("Tracking: No faces detected in the last 2 seconds")
+                        last_log_time = now
+                        
             except Exception as e:
                 self.logger.error(f"Error in tracking loop: {e}")
