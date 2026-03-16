@@ -20,3 +20,4 @@ class RuntimeState:
     tracking_detector: str = 'haar_face'
     tracking_target_acquired: bool = False
     tracking_disable_reason: str | None = None
+    tracking_box: tuple[int, int, int, int] | None = None  # (x, y, w, h) of latest detection

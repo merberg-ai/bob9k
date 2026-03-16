@@ -23,6 +23,6 @@ def register_status_routes(app: Flask) -> None:
         if not cam or not cam.running:
             return Response('camera unavailable', status=503, mimetype='text/plain')
         return Response(
-            cam.mjpeg_generator(),
+            cam.mjpeg_generator(runtime=runtime),
             mimetype='multipart/x-mixed-replace; boundary=frame',
         )

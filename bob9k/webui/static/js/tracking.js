@@ -112,7 +112,9 @@ async function trackingPoll() {
 
     if (d.enabled) {
         if (d.target_acquired && lastTargetAcquired !== true) {
-            appendToTrackingConsole(`Target acquired! Err: (${d.pan_angle.toFixed(1)}, ${d.tilt_angle.toFixed(1)}) tracking...`);
+            const pan = d.pan_angle != null ? d.pan_angle.toFixed(1) : '?';
+            const tilt = d.tilt_angle != null ? d.tilt_angle.toFixed(1) : '?';
+            appendToTrackingConsole(`Target acquired! Pos: pan=${pan}° tilt=${tilt}°`);
             lastTargetAcquired = true;
         } else if (!d.target_acquired && lastTargetAcquired !== false) {
             appendToTrackingConsole('Searching for target...');

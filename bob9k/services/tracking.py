@@ -7,6 +7,7 @@ from typing import Any
 from bob9k.config import load_runtime_config, save_runtime_config
 from bob9k.vision.detectors.haar_face import HaarFaceDetector
 from bob9k.vision.detectors.haar_body import HaarBodyDetector
+from bob9k.vision.detectors.motion import MotionDetector
 from bob9k.vision.tracker import VisionTracker
 
 def get_detector(name: str):
@@ -14,6 +15,8 @@ def get_detector(name: str):
         return HaarFaceDetector()
     elif name == 'haar_body':
         return HaarBodyDetector()
+    elif name == 'motion':
+        return MotionDetector()
     return None
 
 
@@ -106,7 +109,7 @@ class TrackingService:
         cfg['mode'] = mode
 
         detector = str(source.get('detector', cfg['detector'])).strip().lower()
-        if detector not in {'haar_face', 'haar_body'}:
+        if detector not in {'haar_face', 'haar_body', 'motion'}:
             warnings.append(f'detector value {detector!r} is unsupported, using {cfg["detector"]!r}.')
             detector = cfg['detector']
         cfg['detector'] = detector
@@ -260,10 +263,12 @@ class TrackingService:
                     self._last_target_seen_ts = time.time()
                     self.runtime.state.tracking_target_acquired = True
                     self.runtime.state.tracking_disable_reason = None
+                    det = tracked.detection
+                    self.runtime.state.tracking_box = (det.x, det.y, det.w, det.h)
                     self.logger.debug(
                         'Tracking: target=%s area=%s err=(%.1f, %.1f)',
-                        tracked.detection.label,
-                        tracked.detection.area,
+                        det.label,
+                        det.area,
                         tracked.error_x,
                         tracked.error_y,
                     )
@@ -276,13 +281,14 @@ class TrackingService:
                 else:
                     now = time.time()
                     timeout = float(self._tracking_config.get('lost_timeout_s', 2.0))
-                    
+
                     if self._last_target_seen_ts is not None and (now - self._last_target_seen_ts) <= timeout:
                         # Grace period: keep target_acquired True so UI doesn't flicker
                         self.runtime.state.tracking_target_acquired = True
                         self.runtime.state.tracking_disable_reason = None
                     else:
                         self.runtime.state.tracking_target_acquired = False
+                        self.runtime.state.tracking_box = None
                         if self._last_target_seen_ts is not None:
                             self.runtime.state.tracking_disable_reason = 'target_lost'
                         if now - last_log_time > 2.0:
