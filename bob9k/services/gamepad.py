@@ -417,7 +417,8 @@ class GamepadService:
                 self.logger.info("Gamepad: Tracking toggled")
 
         elif is_mapped('camera_home'):
-            if reg.camera_servo:
+            tracking_enabled = getattr(self.runtime.state, 'tracking_enabled', False)
+            if reg.camera_servo and not tracking_enabled:
                 reg.camera_servo.home()
                 self._pan_target = reg.camera_servo.pan_angle
                 self._tilt_target = reg.camera_servo.tilt_angle
@@ -432,7 +433,8 @@ class GamepadService:
             if self._btn_held and getattr(self, 'runtime', None) and self.runtime.registry:
                 reg = self.runtime.registry
                 moved = False
-                if reg.camera_servo:
+                tracking_enabled = getattr(self.runtime.state, 'tracking_enabled', False)
+                if reg.camera_servo and not tracking_enabled:
                     if 'pan_left' in self._btn_held:
                         reg.camera_servo.pan_left()
                         self._pan_target = reg.camera_servo.pan_angle
@@ -518,48 +520,56 @@ class GamepadService:
             reg.steering.set_angle(steer_out)
 
         # Camera: direct stick-to-angle mapping, honoring invert + center.
-        pan_axis = m.get('pan', 'ABS_RX')
-        tilt_axis = m.get('tilt', 'ABS_RY')
-        pan_norm = self._normalize_stick(pan_axis, self.axis_state.get(pan_axis, 0))
-        tilt_norm = self._normalize_stick(tilt_axis, self.axis_state.get(tilt_axis, 0))
-
-        if getattr(reg.camera_servo, 'pan_invert', False):
-            pan_norm *= -1.0
-        if getattr(reg.camera_servo, 'tilt_invert', False):
-            tilt_norm *= -1.0
-
-        pan_center = reg.camera_servo.pan_center
-        pan_left_range = max(0, pan_center - reg.camera_servo.pan_min)
-        pan_right_range = max(0, reg.camera_servo.pan_max - pan_center)
-        raw_pan = pan_center + (pan_norm * (pan_right_range if pan_norm >= 0 else pan_left_range))
-
-        tilt_center = reg.camera_servo.tilt_center
-        tilt_up_range = max(0, tilt_center - reg.camera_servo.tilt_min)
-        tilt_down_range = max(0, reg.camera_servo.tilt_max - tilt_center)
-        # Note: tilt_norm > 0 means stick up, which implies decreasing the angle (moving towards min)
-        # tilt_norm < 0 means stick down, which implies increasing the angle (moving towards max)
-        if tilt_norm > 0:
-            raw_tilt = tilt_center - (tilt_norm * tilt_up_range)
-        else:
-            raw_tilt = tilt_center + (abs(tilt_norm) * tilt_down_range)
-
-        if self._pan_target is None:
-            self._pan_target = reg.camera_servo.pan_angle
-        if self._tilt_target is None:
-            self._tilt_target = reg.camera_servo.tilt_angle
-
-        self._pan_target = (self.camera_alpha * raw_pan) + ((1.0 - self.camera_alpha) * self._pan_target)
-        self._tilt_target = (self.camera_alpha * raw_tilt) + ((1.0 - self.camera_alpha) * self._tilt_target)
-
-        pan_out = int(round(self._pan_target))
-        tilt_out = int(round(self._tilt_target))
+        tracking_enabled = getattr(self.runtime.state, 'tracking_enabled', False)
+        
         moved = False
-        if abs(reg.camera_servo.pan_angle - pan_out) >= 1:
-            reg.camera_servo.set_pan(pan_out)
-            moved = True
-        if abs(reg.camera_servo.tilt_angle - tilt_out) >= 1:
-            reg.camera_servo.set_tilt(tilt_out)
-            moved = True
+        if not tracking_enabled:
+            pan_axis = m.get('pan', 'ABS_RX')
+            tilt_axis = m.get('tilt', 'ABS_RY')
+            pan_norm = self._normalize_stick(pan_axis, self.axis_state.get(pan_axis, 0))
+            tilt_norm = self._normalize_stick(tilt_axis, self.axis_state.get(tilt_axis, 0))
+
+            if getattr(reg.camera_servo, 'pan_invert', False):
+                pan_norm *= -1.0
+            if getattr(reg.camera_servo, 'tilt_invert', False):
+                tilt_norm *= -1.0
+
+            pan_center = reg.camera_servo.pan_center
+            pan_left_range = max(0, pan_center - reg.camera_servo.pan_min)
+            pan_right_range = max(0, reg.camera_servo.pan_max - pan_center)
+            raw_pan = pan_center + (pan_norm * (pan_right_range if pan_norm >= 0 else pan_left_range))
+
+            tilt_center = reg.camera_servo.tilt_center
+            tilt_up_range = max(0, tilt_center - reg.camera_servo.tilt_min)
+            tilt_down_range = max(0, reg.camera_servo.tilt_max - tilt_center)
+            # Note: tilt_norm > 0 means stick up, which implies decreasing the angle (moving towards min)
+            # tilt_norm < 0 means stick down, which implies increasing the angle (moving towards max)
+            if tilt_norm > 0:
+                raw_tilt = tilt_center - (tilt_norm * tilt_up_range)
+            else:
+                raw_tilt = tilt_center + (abs(tilt_norm) * tilt_down_range)
+
+            if self._pan_target is None:
+                self._pan_target = reg.camera_servo.pan_angle
+            if self._tilt_target is None:
+                self._tilt_target = reg.camera_servo.tilt_angle
+
+            self._pan_target = (self.camera_alpha * raw_pan) + ((1.0 - self.camera_alpha) * self._pan_target)
+            self._tilt_target = (self.camera_alpha * raw_tilt) + ((1.0 - self.camera_alpha) * self._tilt_target)
+
+            pan_out = int(round(self._pan_target))
+            tilt_out = int(round(self._tilt_target))
+            
+            if abs(reg.camera_servo.pan_angle - pan_out) >= 1:
+                reg.camera_servo.set_pan(pan_out)
+                moved = True
+            if abs(reg.camera_servo.tilt_angle - tilt_out) >= 1:
+                reg.camera_servo.set_tilt(tilt_out)
+                moved = True
+        else:
+            # Sync targets so the servo doesn't snap back when tracking ends
+            self._pan_target = reg.camera_servo.pan_angle
+            self._tilt_target = reg.camera_servo.tilt_angle
 
         if moved or abs(reg.steering.angle - steer_out) >= 0:
             self.last_servo_update = now
