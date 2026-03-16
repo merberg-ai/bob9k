@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import cv2
+import os
 
 from bob9k.vision.detectors.base import BaseDetector
 from bob9k.vision.models import Detection
 
-
-class HaarFaceDetector(BaseDetector):
-    name = "haar_face"
+class HaarBodyDetector(BaseDetector):
+    name = "haar_body"
 
     def __init__(self):
-        import os
-        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_fullbody.xml')
         self.cascade = cv2.CascadeClassifier(cascade_path)
 
     def is_available(self) -> bool:
@@ -22,7 +21,7 @@ class HaarFaceDetector(BaseDetector):
             return []
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.cascade.detectMultiScale(
+        bodies = self.cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
             minNeighbors=4,
@@ -30,10 +29,10 @@ class HaarFaceDetector(BaseDetector):
         )
 
         detections = []
-        for (x, y, w, h) in faces:
+        for (x, y, w, h) in bodies:
             detections.append(
                 Detection(
-                    label='face',
+                    label='body',
                     confidence=1.0,
                     x=int(x),
                     y=int(y),

@@ -138,6 +138,45 @@ async function resetCameraSettings(){
   }
 }
 
+async function loadTrackingSettings(){
+  if(document.body.dataset.page!=='settings') return;
+  const msg = document.getElementById('tracking-settings-message');
+  try{
+    const data = await window.bob9kApi.getTrackingConfig();
+    if(data.ok && data.config) {
+        document.getElementById('tracking-detector').value = data.config.detector || 'haar_face';
+    }
+    if(msg) msg.textContent = 'Tracking settings loaded.';
+  }catch(err){
+    if(msg) msg.textContent = 'Failed to load tracking settings.';
+  }
+}
+
+async function saveTrackingSettings(){
+  const msg = document.getElementById('tracking-settings-message');
+  try{
+    if(msg) msg.textContent = 'Saving tracking settings…';
+    setActionMessage('Saving tracking settings…', 'info');
+    const detectorVal = document.getElementById('tracking-detector').value;
+    const payload = {
+      detector: detectorVal,
+      target_label: detectorVal === 'haar_face' ? 'face' : 'body'
+    };
+    const data = await window.bob9kApi.saveTrackingConfig(payload);
+    if(data.ok && data.config) {
+        document.getElementById('tracking-detector').value = data.config.detector || 'haar_face';
+        if(msg) msg.textContent = 'Tracking settings saved.';
+        setActionMessage('Tracking settings saved.', 'success');
+    } else {
+        if(msg) msg.textContent = 'Failed to save tracking settings.';
+        setActionMessage('Failed to save tracking settings.', 'error');
+    }
+  }catch(err){
+    if(msg) msg.textContent = 'Failed to save tracking settings.';
+    setActionMessage('Failed to save tracking settings.', 'error');
+  }
+}
+
 async function loadNetworkStatus(){
   if(document.body.dataset.page!=='settings') return;
   const statusTxt = document.getElementById('network-status-text');
@@ -224,6 +263,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if(document.body.dataset.page!=='settings') return;
   loadServoTrimSettings();
   loadCameraSettings();
+  loadTrackingSettings();
   loadNetworkStatus();
 
   document.querySelectorAll('[data-trim-target]').forEach(btn=>{
@@ -246,6 +286,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   const resetCameraBtn = document.getElementById('reset-camera-settings');
   if(resetCameraBtn) resetCameraBtn.addEventListener('click', resetCameraSettings);
+
+  const saveTrackingBtn = document.getElementById('save-tracking-settings');
+  if(saveTrackingBtn) saveTrackingBtn.addEventListener('click', saveTrackingSettings);
 
   const centerBtn = document.getElementById('test-steering-center');
   if(centerBtn) centerBtn.addEventListener('click', async()=>{ await window.bob9kApi.steeringCenter(); await refreshStatus(); });

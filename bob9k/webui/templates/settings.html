@@ -42,6 +42,23 @@
 </section>
 
 <section class='card'>
+  <h3>Tracking Options</h3>
+  <div class='status-grid'>
+    <div>
+      <span>Tracking Target</span>
+      <select id='tracking-detector'>
+        <option value='haar_face'>Face</option>
+        <option value='haar_body'>Full Body</option>
+      </select>
+    </div>
+  </div>
+  <div class='button-grid'>
+    <button id='save-tracking-settings'>Save Tracking</button>
+  </div>
+  <p id='tracking-settings-message' class='muted'>Loading tracking options…</p>
+</section>
+
+<section class='card'>
   <h3>Network Configuration</h3>
   <p class='muted'>Manage Wi-Fi connection for the system. This saves the profile so it connects on boot.</p>
   <div class='status-grid'>

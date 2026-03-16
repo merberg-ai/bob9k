@@ -6,7 +6,15 @@ from typing import Any
 
 from bob9k.config import load_runtime_config, save_runtime_config
 from bob9k.vision.detectors.haar_face import HaarFaceDetector
+from bob9k.vision.detectors.haar_body import HaarBodyDetector
 from bob9k.vision.tracker import VisionTracker
+
+def get_detector(name: str):
+    if name == 'haar_face':
+        return HaarFaceDetector()
+    elif name == 'haar_body':
+        return HaarBodyDetector()
+    return None
 
 
 class TrackingService:
@@ -40,8 +48,8 @@ class TrackingService:
         except ImportError:
             self._cv_available = False
 
-        self.detector = HaarFaceDetector() if self._cv_available else None
         self._tracking_config = self._build_tracking_config(self.runtime.config.get('tracking', {}))
+        self.detector = get_detector(self._tracking_config.get('detector', 'haar_face')) if self._cv_available else None
         self.tracker = VisionTracker(self._tracking_config)
         self.target_distance_cm = float(self._tracking_config.get('target_distance_cm', 30.0))
         self.distance_tolerance_cm = float(self._tracking_config.get('distance_tolerance_cm', 5.0))
@@ -98,7 +106,7 @@ class TrackingService:
         cfg['mode'] = mode
 
         detector = str(source.get('detector', cfg['detector'])).strip().lower()
-        if detector not in {'haar_face'}:
+        if detector not in {'haar_face', 'haar_body'}:
             warnings.append(f'detector value {detector!r} is unsupported, using {cfg["detector"]!r}.')
             detector = cfg['detector']
         cfg['detector'] = detector
@@ -130,6 +138,9 @@ class TrackingService:
         self.runtime.config['tracking'] = dict(normalized)
         self.runtime.state.tracking_mode = str(normalized.get('mode', 'camera_track'))
         self.runtime.state.tracking_detector = str(normalized.get('detector', 'haar_face'))
+
+        if 'detector' in (updates or {}) and self._cv_available:
+            self.detector = get_detector(normalized.get('detector', 'haar_face'))
 
         if 'enabled' in (updates or {}):
             self.runtime.state.tracking_enabled = bool(normalized.get('enabled', False))
