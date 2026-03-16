@@ -10,8 +10,7 @@ class HaarFaceDetector(BaseDetector):
     name = "haar_face"
 
     def __init__(self):
-        import os
-        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.cascade = cv2.CascadeClassifier(cascade_path)
 
     def is_available(self) -> bool:

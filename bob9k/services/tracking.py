@@ -274,13 +274,20 @@ class TrackingService:
                     self.runtime.state.pan_angle = camera_servo.pan_angle
                     self.runtime.state.tilt_angle = camera_servo.tilt_angle
                 else:
-                    self.runtime.state.tracking_target_acquired = False
                     now = time.time()
-                    if self._last_target_seen_ts is not None and (now - self._last_target_seen_ts) > float(self._tracking_config.get('lost_timeout_s', 2.0)):
-                        self.runtime.state.tracking_disable_reason = 'target_lost'
-                    if now - last_log_time > 2.0:
-                        self.logger.info('Tracking: No targets detected in the last 2 seconds')
-                        last_log_time = now
+                    timeout = float(self._tracking_config.get('lost_timeout_s', 2.0))
+                    
+                    if self._last_target_seen_ts is not None and (now - self._last_target_seen_ts) <= timeout:
+                        # Grace period: keep target_acquired True so UI doesn't flicker
+                        self.runtime.state.tracking_target_acquired = True
+                        self.runtime.state.tracking_disable_reason = None
+                    else:
+                        self.runtime.state.tracking_target_acquired = False
+                        if self._last_target_seen_ts is not None:
+                            self.runtime.state.tracking_disable_reason = 'target_lost'
+                        if now - last_log_time > 2.0:
+                            self.logger.info('Tracking: No targets detected in the last 2 seconds')
+                            last_log_time = now
 
             except Exception as exc:
                 self.logger.error(f'Error in tracking loop: {exc}')

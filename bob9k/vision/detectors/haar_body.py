@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import cv2
-import os
 
 from bob9k.vision.detectors.base import BaseDetector
 from bob9k.vision.models import Detection
@@ -10,7 +9,7 @@ class HaarBodyDetector(BaseDetector):
     name = "haar_body"
 
     def __init__(self):
-        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_fullbody.xml')
+        cascade_path = cv2.data.haarcascades + 'haarcascade_fullbody.xml'
         self.cascade = cv2.CascadeClassifier(cascade_path)
 
     def is_available(self) -> bool:
