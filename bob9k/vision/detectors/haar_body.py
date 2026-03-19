@@ -5,54 +5,42 @@ import cv2
 from bob9k.vision.detectors.base import BaseDetector
 from bob9k.vision.models import Detection
 
+
 class HaarBodyDetector(BaseDetector):
-    name = "haar_body"
+    name = 'body'
 
     def __init__(self):
-        cascade_path = cv2.data.haarcascades + 'haarcascade_fullbody.xml'
-        self.cascade = cv2.CascadeClassifier(cascade_path)
+        self.hog = cv2.HOGDescriptor()
+        self.hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
     def is_available(self) -> bool:
-        return self.cascade is not None and not self.cascade.empty()
-
-    def get_status(self) -> dict:
-        ok = self.is_available()
-        return {
-            'name': self.name,
-            'available': ok,
-            'enabled_by_config': True,
-            'dependency_ok': True,
-            'model_ready': ok,
-            'reason': None if ok else 'haar_cascade_missing',
-        }
+        return self.hog is not None
 
     def detect(self, frame):
         if frame is None or not self.is_available():
             return []
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
-        bodies = self.cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=4,
-            minSize=(30, 30),
+        scale = 1.0
+        h, w = frame.shape[:2]
+        work = frame
+        if w > 640:
+            scale = 640.0 / float(w)
+            nh = max(64, int(h * scale))
+            work = cv2.resize(frame, (640, nh))
+        rects, weights = self.hog.detectMultiScale(
+            work,
+            winStride=(8, 8),
+            padding=(8, 8),
+            scale=1.03,
+            useMeanshiftGrouping=False,
         )
-
-        detections = []
-        for (x, y, w, h) in bodies:
-            detections.append(
-                Detection(
-                    label='body',
-                    confidence=1.0,
-                    x=int(x),
-                    y=int(y),
-                    w=int(w),
-                    h=int(h),
-                    center_x=float(x + (w / 2.0)),
-                    center_y=float(y + (h / 2.0)),
-                    area=int(w * h),
-                    detector=self.name,
-                )
-            )
-        return detections
+        out = []
+        inv = 1.0 / scale
+        for (x, y, ww, hh), conf in zip(rects, weights):
+            x = int(x * inv)
+            y = int(y * inv)
+            ww = int(ww * inv)
+            hh = int(hh * inv)
+            if hh < ww or hh < 100:
+                continue
+            out.append(Detection('person', float(conf), x, y, ww, hh, x + ww / 2.0, y + hh / 2.0, int(ww * hh), self.name))
+        return out

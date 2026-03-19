@@ -115,6 +115,8 @@ motors:
   command_timeout_s: 0.75
   left_invert: false
   right_invert: true
+
+
 camera:
   width: 640
   height: 480
@@ -128,30 +130,41 @@ camera:
   exposure_compensation: 0.0
   manual_red_gain: null
   manual_blue_gain: null
+
+
 tracking:
   enabled: false
   mode: camera_track
-  detector: haar_face
-  target_label: face
-  pan_gain: 0.05
-  tilt_gain: 0.05
-  x_deadzone_px: 64
-  y_deadzone_px: 48
+  detector: face
+  target_label: ''
+  yolo_model: yolov8n.pt
+  enable_yolo: false
+  yolo_imgsz: 320
+  yolo_classes: []
+  confidence_min: 0.45
+  max_results: 20
+  min_area: 1500
+  min_target_area: 900
+  pan_gain: 0.06
+  tilt_gain: 0.06
+  x_deadzone_px: 48
+  y_deadzone_px: 36
   smoothing_alpha: 0.4
-  scan_when_lost: false
-  lost_timeout_s: 2.0
-  target_distance_cm: 30.0
-  distance_tolerance_cm: 5.0
-  confidence_threshold: 0.45
-  min_detection_area: 0.01
-  min_target_area: 0.02
-  edge_reject_margin_px: 12
-  detect_only_mode: false
-  diagnostics_overlay: true
-  lock_hysteresis: true
-  lock_iou_threshold: 0.35
-  switch_margin: 0.15
-  min_lock_frames: 3
-  process_every_n_frames: 1
-  max_servo_step: 4
-  servo_rate_limit_hz: 15
+  scan_when_lost: true
+  scan_step: 2
+  scan_tilt_step: 0
+  lost_timeout_s: 1.5
+  process_every_n_frames: 3
+  box_padding_px: 8
+  show_labels: true
+  show_crosshair: true
+  show_metrics_overlay: true
+  preferred_target: largest
+  servo_idle_hold_s: 0.35
+  invert_error_x: false
+  invert_error_y: false
+  jpeg_every_n_frames: 2
+  idle_sleep_s: 0.02
+  stats_log_interval_s: 10.0
+  overlay_enabled: true
+

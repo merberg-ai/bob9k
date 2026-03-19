@@ -15,22 +15,25 @@ class RuntimeState:
     pan_angle: int = 90
     tilt_angle: int = 90
     telemetry: dict[str, Any] = field(default_factory=dict)
+
     tracking_enabled: bool = False
     tracking_mode: str = 'camera_track'
-    tracking_detector: str = 'haar_face'
+    tracking_detector: str = 'face'
     tracking_target_acquired: bool = False
     tracking_disable_reason: str | None = None
     tracking_box: tuple[int, int, int, int] | None = None
     tracking_target_label: str | None = None
     tracking_target_confidence: float | None = None
-    tracking_target_area_ratio: float | None = None
-    tracking_error_x: float = 0.0
-    tracking_error_y: float = 0.0
-    tracking_target_locked: bool = False
-    tracking_target_lock_frames: int = 0
-    tracking_target_switch_reason: str | None = None
-    tracking_target_lost_age_s: float | None = None
-    tracking_detect_only_mode: bool = False
-    tracking_detector_status: dict[str, Any] = field(default_factory=dict)
-    tracking_detector_reason: str | None = None
-    tracking_debug: dict[str, Any] = field(default_factory=dict)
+    tracking_last_detection_count: int = 0
+    tracking_frame_size: tuple[int, int] | None = None
+    tracking_scan_active: bool = False
+    tracking_metrics: dict[str, Any] = field(default_factory=dict)
+    tracking_detector_available: bool = False
+    tracking_detector_status: str = 'unknown'
+    tracking_detector_details: dict[str, Any] = field(default_factory=dict)
+    tracking_preferred_target: str = 'largest'
+    tracking_yolo_available: bool = False
+    tracking_overlay_enabled: bool = True
+    tracking_fps_actual: float = 0.0
+    tracking_mjpeg_clients: int = 0
+    tracking_last_error: str | None = None

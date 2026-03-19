@@ -1,213 +1,242 @@
-let trackingConsoleLines = [];
-const MAX_CONSOLE_LINES = 50;
-let lastTrackingSnapshot = null;
-let lastTargetAcquired = null;
+const trackingPage = () => document.body.dataset.page === 'tracking';
+const $t = (id) => document.getElementById(id);
+let trackingCurrentState = null;
+let trackingCurrentConfig = null;
+let trackingLastRefresh = 0;
 
-function appendToTrackingConsole(msg) {
-  const cons = document.getElementById('tracking-console');
-  if (!cons) return;
-  const now = new Date();
-  const timeStr = now.toTimeString().split(' ')[0];
-  const line = `[${timeStr}] ${msg}`;
-  trackingConsoleLines.push(line);
-  if (trackingConsoleLines.length > MAX_CONSOLE_LINES) trackingConsoleLines.shift();
-  cons.innerHTML = trackingConsoleLines.map(l => `<div>${l}</div>`).join('');
-  cons.scrollTop = cons.scrollHeight;
-}
+function trackingConsoleEl() { return $t('console'); }
 
-function setText(id, value){
-  const el = document.getElementById(id);
-  if (el) el.textContent = value;
-}
-
-async function loadDetectorStatus() {
-  try {
-    const data = await fetch('/api/tracking/detectors').then(r => r.json());
-    if (!data.ok || !data.status) return;
-    const active = data.status.active_detector;
-    const detectors = data.status.detectors || {};
-    const current = detectors[active] || {};
-    setText('tracking-active-detector', active || '--');
-    setText('tracking-detector-status', current.available ? 'READY' : 'UNAVAILABLE');
-    setText('tracking-detector-reason', current.reason || 'ok');
-    const yolo = data.status.yolo || {};
-    setText('tracking-yolo-status', yolo.reason ? `Unavailable (${yolo.reason})` : 'Ready');
-  } catch (err) {}
-}
-
-async function loadTrackingSettings(){
-  const msg = document.getElementById('tracking-settings-message');
-  try{
-    const data = await window.bob9kApi.getTrackingConfig();
-    if(data.ok && data.config) {
-      document.getElementById('tracking-detector').value = data.config.detector || 'haar_face';
-      document.getElementById('tracking-detect-only').value = data.config.detect_only_mode ? 'true' : 'false';
-      document.getElementById('tracking-target-distance').value = data.config.target_distance_cm ?? 30;
-      document.getElementById('tracking-dist-tolerance').value = data.config.distance_tolerance_cm ?? 5;
-      document.getElementById('tracking-pan-gain').value = data.config.pan_gain ?? 0.05;
-      document.getElementById('tracking-tilt-gain').value = data.config.tilt_gain ?? 0.05;
-      document.getElementById('tracking-x-deadzone').value = data.config.x_deadzone_px ?? 64;
-      document.getElementById('tracking-y-deadzone').value = data.config.y_deadzone_px ?? 48;
-      document.getElementById('tracking-min-area').value = data.config.min_detection_area ?? 0.01;
-      document.getElementById('tracking-edge-margin').value = data.config.edge_reject_margin_px ?? 12;
-      document.getElementById('tracking-lost-timeout').value = data.config.lost_timeout_s ?? 2.0;
-      document.getElementById('tracking-scan').value = data.config.scan_when_lost ? 'true' : 'false';
-      document.getElementById('tracking-switch-margin').value = data.config.switch_margin ?? 0.15;
-      document.getElementById('tracking-min-lock-frames').value = data.config.min_lock_frames ?? 3;
-    }
-    await loadDetectorStatus();
-  }catch(err){
-    if(msg) msg.textContent = 'Failed to load tracking settings.';
-  }
-}
-
-async function saveTrackingSettings(){
-  const msg = document.getElementById('tracking-settings-message');
-  try{
-    if(msg) msg.textContent = 'Saving tracking settings…';
-    setActionMessage('Saving tracking settings…', 'info');
-    const detectorVal = document.getElementById('tracking-detector').value;
-    const payload = {
-      detector: detectorVal,
-      detect_only_mode: document.getElementById('tracking-detect-only').value === 'true',
-      target_label: detectorVal === 'haar_face' ? 'face' : detectorVal === 'haar_body' ? 'body' : 'motion',
-      target_distance_cm: parseFloat(document.getElementById('tracking-target-distance').value),
-      distance_tolerance_cm: parseFloat(document.getElementById('tracking-dist-tolerance').value),
-      pan_gain: parseFloat(document.getElementById('tracking-pan-gain').value),
-      tilt_gain: parseFloat(document.getElementById('tracking-tilt-gain').value),
-      x_deadzone_px: parseInt(document.getElementById('tracking-x-deadzone').value),
-      y_deadzone_px: parseInt(document.getElementById('tracking-y-deadzone').value),
-      min_detection_area: parseFloat(document.getElementById('tracking-min-area').value),
-      edge_reject_margin_px: parseInt(document.getElementById('tracking-edge-margin').value),
-      lost_timeout_s: parseFloat(document.getElementById('tracking-lost-timeout').value),
-      scan_when_lost: document.getElementById('tracking-scan').value === 'true',
-      switch_margin: parseFloat(document.getElementById('tracking-switch-margin').value),
-      min_lock_frames: parseInt(document.getElementById('tracking-min-lock-frames').value)
-    };
-    const data = await window.bob9kApi.saveTrackingConfig(payload);
-    if(data.ok && data.config) {
-      if(msg) msg.textContent = 'Tracking settings saved.';
-      setActionMessage('Tracking settings saved.', 'success');
-      appendToTrackingConsole('Settings updated and saved.');
-      await loadDetectorStatus();
-    } else {
-      if(msg) msg.textContent = 'Failed to save tracking settings.';
-      setActionMessage('Failed to save tracking settings.', 'error');
-    }
-  }catch(err){
-    if(msg) msg.textContent = 'Failed to save tracking settings.';
-    setActionMessage('Failed to save tracking settings.', 'error');
-  }
-}
-
-async function toggleTracking() {
-  try {
-    const data = await fetch('/api/tracking/toggle', {method: 'POST'}).then(r => r.json());
-    appendToTrackingConsole(data.enabled ? 'Tracking system ENABLED manually.' : 'Tracking system DISABLED manually.');
-    trackingPoll();
-  } catch(e) {}
-}
-
-async function copyTrackingDebug() {
-  try {
-    const d = await fetch('/api/tracking/debug').then(r => r.json());
-    await navigator.clipboard.writeText(JSON.stringify(d, null, 2));
-    appendToTrackingConsole('Copied tracking debug snapshot to clipboard.');
-    setActionMessage('Tracking debug copied.', 'success');
-  } catch (err) {
-    setActionMessage('Failed to copy tracking debug.', 'error');
-  }
-}
-
-function updateBadge(id, text, active) {
-  const el = document.getElementById(id);
+function trackingLog(msg) {
+  const el = trackingConsoleEl();
   if (!el) return;
-  el.textContent = text;
-  el.style.color = active ? 'var(--accent)' : 'var(--muted)';
-  el.style.borderColor = active ? 'rgba(0,255,204,0.35)' : 'rgba(255,255,255,0.12)';
+  const stamp = new Date().toLocaleTimeString();
+  el.textContent = `[${stamp}] ${msg}
+` + el.textContent;
 }
 
-async function trackingPoll() {
-  if (document.body.dataset.page !== 'tracking') return;
-  try {
-    const d = await fetch('/api/tracking/debug').then(r => r.json());
-    lastTrackingSnapshot = d;
-    const trBadge = document.getElementById('tracking-status-badge');
-    const trBtn = document.getElementById('btn-toggle-tracking');
-    const summary = document.getElementById('tracking-state-summary');
+async function trackingFetch(url, opts={}) {
+  const r = await fetch(url, {headers: {'Content-Type':'application/json'}, ...opts});
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error || `request failed: ${r.status}`);
+  return data;
+}
 
-    if (d.enabled) {
-      trBadge.textContent = 'ENABLED';
-      trBadge.style.color = 'var(--accent)';
-      trBadge.style.borderColor = 'rgba(0,255,204,0.4)';
-      trBtn.textContent = 'Disable Tracking';
-      trBtn.style.color = '#ff3366';
-      trBtn.style.borderColor = 'rgba(255,51,102,0.4)';
-    } else {
-      trBadge.textContent = 'DISABLED';
-      trBadge.style.color = 'var(--muted)';
-      trBadge.style.borderColor = 'rgba(255,255,255,0.12)';
-      trBtn.textContent = 'Enable Tracking';
-      trBtn.style.color = 'var(--text)';
-      trBtn.style.borderColor = 'var(--border)';
-      if (d.disable_reason && d.disable_reason !== 'mode_off' && lastTargetAcquired !== false) {
-        appendToTrackingConsole(`Disabled reason: ${d.disable_reason}`);
-        lastTargetAcquired = false;
-      }
-    }
+function trackingSetValue(id, value) {
+  const el = $t(id);
+  if (!el) return;
+  el.value = value ?? '';
+}
 
-    updateBadge('tracking-lock-badge', d.target_locked ? 'LOCKED' : 'UNLOCKED', !!d.target_locked);
-    updateBadge('tracking-detectonly-badge', d.detect_only_mode ? 'DETECT ONLY' : 'LIVE SERVO', !d.detect_only_mode);
+function trackingFillConfig(payload) {
+  trackingCurrentConfig = payload.config || {};
+  const cfg = payload.config || {};
+  [
+    'detector','target_label','yolo_model','yolo_imgsz','confidence_min','max_results','min_area',
+    'min_target_area','pan_gain','tilt_gain','x_deadzone_px','y_deadzone_px','smoothing_alpha',
+    'lost_timeout_s','scan_step','scan_tilt_step','process_every_n_frames','box_padding_px','preferred_target'
+  ].forEach((k) => trackingSetValue(k, cfg[k]));
+  trackingSetValue('enable_yolo', String(!!cfg.enable_yolo));
+  trackingSetValue('yolo_classes', Array.isArray(cfg.yolo_classes) ? cfg.yolo_classes.join(',') : (cfg.yolo_classes || ''));
+  ['scan_when_lost','show_labels','show_crosshair','show_metrics_overlay','invert_error_x','invert_error_y'].forEach((k) => trackingSetValue(k, String(!!cfg[k])));
 
-    if (summary) {
-      const pieces = [];
-      pieces.push(`Detector: ${d.detector || '--'}`);
-      if (d.target_label) pieces.push(`Target: ${d.target_label}`);
-      if (d.target_confidence != null) pieces.push(`Conf: ${Number(d.target_confidence).toFixed(2)}`);
-      if (d.disable_reason) pieces.push(`Reason: ${d.disable_reason}`);
-      summary.textContent = pieces.join(' • ') || 'Waiting for tracking state…';
-    }
+  const servo = payload.servo || {};
+  if (servo.pan) {
+    $t('manual_pan').min = servo.pan.min ?? servo.pan.min_angle ?? 0;
+    $t('manual_pan').max = servo.pan.max ?? servo.pan.max_angle ?? 180;
+    $t('manual_pan').value = servo.pan.angle;
+    $t('pan_trim').value = servo.pan.trim;
+  }
+  if (servo.tilt) {
+    $t('manual_tilt').min = servo.tilt.min ?? servo.tilt.min_angle ?? 0;
+    $t('manual_tilt').max = servo.tilt.max ?? servo.tilt.max_angle ?? 180;
+    $t('manual_tilt').value = servo.tilt.angle;
+    $t('tilt_trim').value = servo.tilt.trim;
+  }
+}
 
-    if (d.enabled) {
-      if (d.target_acquired && lastTargetAcquired !== true) {
-        const pan = d.pan_angle != null ? Number(d.pan_angle).toFixed(1) : '?';
-        const tilt = d.tilt_angle != null ? Number(d.tilt_angle).toFixed(1) : '?';
-        appendToTrackingConsole(`Target acquired! Pos: pan=${pan}° tilt=${tilt}°`);
-        lastTargetAcquired = true;
-      } else if (!d.target_acquired && lastTargetAcquired !== false) {
-        appendToTrackingConsole('Searching for target...');
-        lastTargetAcquired = false;
-      }
-    }
+function trackingReadConfigForm() {
+  const detector = $t('detector').value;
+  const enable_yolo = detector === 'yolo' ? true : ($t('enable_yolo').value === 'true');
+  return {
+    detector,
+    preferred_target: $t('preferred_target').value,
+    target_label: $t('target_label').value.trim(),
+    yolo_model: $t('yolo_model').value.trim() || 'yolov8n.pt',
+    yolo_classes: $t('yolo_classes').value.trim().split(',').map(s => s.trim()).filter(Boolean),
+    confidence_min: Number($t('confidence_min').value || 0.45),
+    max_results: Number($t('max_results').value || 20),
+    min_area: Number($t('min_area').value || 1500),
+    min_target_area: Number($t('min_target_area').value || 900),
+    pan_gain: Number($t('pan_gain').value || 0.06),
+    tilt_gain: Number($t('tilt_gain').value || 0.06),
+    x_deadzone_px: Number($t('x_deadzone_px').value || 48),
+    y_deadzone_px: Number($t('y_deadzone_px').value || 36),
+    smoothing_alpha: Number($t('smoothing_alpha').value || 0.4),
+    lost_timeout_s: Number($t('lost_timeout_s').value || 1.5),
+    scan_when_lost: $t('scan_when_lost').value === 'true',
+    scan_step: Number($t('scan_step').value || 2),
+    scan_tilt_step: Number($t('scan_tilt_step').value || 0),
+    process_every_n_frames: Number($t('process_every_n_frames').value || 3),
+    box_padding_px: Number($t('box_padding_px').value || 8),
+    show_labels: $t('show_labels').value === 'true',
+    show_crosshair: $t('show_crosshair').value === 'true',
+    show_metrics_overlay: $t('show_metrics_overlay').value === 'true',
+    invert_error_x: $t('invert_error_x').value === 'true',
+    invert_error_y: $t('invert_error_y').value === 'true',
+    enable_yolo,
+    yolo_imgsz: Number($t('yolo_imgsz').value || 320),
+    overlay_enabled: true,
+  };
+}
 
-    setText('tracking-debug-target', d.target_label || '--');
-    setText('tracking-debug-confidence', d.target_confidence != null ? Number(d.target_confidence).toFixed(2) : '--');
-    setText('tracking-debug-area', d.target_area_ratio != null ? Number(d.target_area_ratio).toFixed(4) : '--');
-    setText('tracking-debug-error', `${Number(d.error_x || 0).toFixed(1)} / ${Number(d.error_y || 0).toFixed(1)}`);
-    setText('tracking-debug-lockframes', d.target_lock_frames != null ? String(d.target_lock_frames) : '--');
-    setText('tracking-debug-switchreason', d.target_switch_reason || '--');
-    setText('tracking-debug-lostage', d.target_lost_age_s != null ? `${Number(d.target_lost_age_s).toFixed(2)}s` : '--');
-    const dbg = d.debug || {};
-    setText('tracking-debug-candidates', `${dbg.filtered_candidate_count ?? '--'} / raw ${dbg.raw_candidate_count ?? '--'}`);
+function trackingUpdateServoReadout(state) {
+  $t('logical-pan-readout').textContent = String(state.pan_angle ?? '--');
+  $t('logical-tilt-readout').textContent = String(state.tilt_angle ?? '--');
+  $t('physical-pan-readout').textContent = String(state.pan_physical ?? '--');
+  $t('physical-tilt-readout').textContent = String(state.tilt_physical ?? '--');
+  $t('servo-stat').textContent = `P ${state.pan_angle ?? '--'} / T ${state.tilt_angle ?? '--'}`;
+}
 
-    const detectorStatus = d.detector_status || {};
-    const active = (detectorStatus.detectors || {})[d.detector || ''] || {};
-    setText('tracking-active-detector', d.detector || '--');
-    setText('tracking-detector-status', active.available ? 'READY' : 'UNAVAILABLE');
-    setText('tracking-detector-reason', active.reason || 'ok');
+async function trackingRefresh() {
+  const now = Date.now();
+  if (now - trackingLastRefresh < 250) return;
+  trackingLastRefresh = now;
+  const resp = await trackingFetch('/api/tracking/state');
+  const s = resp.state || {};
+  trackingCurrentState = s;
+  $t('status-pill-local').textContent = s.tracking_enabled ? (s.target_acquired ? 'Tracking' : (s.scan_active ? 'Scanning' : 'Armed')) : 'Idle';
+  $t('detector-name').textContent = `detector: ${s.detector || '--'}`;
+  $t('detect-count').textContent = `detections: ${s.last_detection_count ?? '--'}`;
+  $t('fps-stat').textContent = `fps: ${s.metrics?.fps_actual ?? '--'}`;
+  $t('toggle-tracking').textContent = s.tracking_enabled ? 'Disable Tracking' : 'Enable Tracking';
+  const conf = (typeof s.target_confidence === 'number') ? s.target_confidence.toFixed(2) : '';
+  $t('target-stat').textContent = s.target_acquired ? `${s.target_label || 'target'} ${conf}`.trim() : 'None';
+  $t('detector-status').textContent = s.detector_status || '--';
+  $t('scan-stat').textContent = s.scan_active ? 'active' : 'off';
+  $t('servo-driver').textContent = `${s.servo_backend || '--'}${s.servo_ok ? '' : ' (mock)'}`;
+  $t('servo-driver').title = s.servo_status || '';
+  const detDetails = s.detector_details || {};
+  const healthText = detDetails.reason ? `${detDetails.status || '--'} (${detDetails.reason})` : (detDetails.status || '--');
+  if ($t('detector-health')) { $t('detector-health').textContent = healthText; $t('detector-health').title = healthText; }
+  const yoloOpt = $t('detector').querySelector('option[value="yolo"]');
+  if (yoloOpt) {
+    yoloOpt.disabled = !s.yolo_available;
+    yoloOpt.textContent = s.yolo_available ? 'YOLO Objects' : 'YOLO Objects (unavailable)';
+    if (!s.yolo_available) yoloOpt.title = 'ultralytics not installed or unavailable';
+  }
+  trackingUpdateServoReadout(s);
+  $t('detector-status').title = s.detector_status || '';
+  if (document.activeElement !== $t('manual_pan')) $t('manual_pan').value = s.pan_angle ?? $t('manual_pan').value;
+  if (document.activeElement !== $t('manual_tilt')) $t('manual_tilt').value = s.tilt_angle ?? $t('manual_tilt').value;
+  if (s.last_error) trackingLog(`error: ${s.last_error}`);
+}
 
-  } catch(e) {}
-  setTimeout(trackingPoll, 1000);
+async function trackingApplyServo() {
+  const payload = {
+    pan: Number($t('manual_pan').value),
+    tilt: Number($t('manual_tilt').value),
+    pan_trim: Number($t('pan_trim').value || 0),
+    tilt_trim: Number($t('tilt_trim').value || 0),
+  };
+  const res = await trackingFetch('/api/tracking/servo/set', {method:'POST', body: JSON.stringify(payload)});
+  trackingLog(`servo set pan=${res.servo.pan.angle} tilt=${res.servo.tilt.angle} trim=(${res.servo.pan.trim},${res.servo.tilt.trim})`);
+  trackingUpdateServoReadout({
+    pan_angle: res.servo.pan.angle,
+    tilt_angle: res.servo.tilt.angle,
+    pan_physical: res.servo.pan.physical_angle,
+    tilt_physical: res.servo.tilt.physical_angle,
+  });
+}
+
+async function trackingBoot() {
+  const cfg = await trackingFetch('/api/tracking/config');
+  trackingFillConfig(cfg);
+  await trackingRefresh();
+  setInterval(() => trackingRefresh().catch(err => trackingLog(`refresh failed: ${err.message || err}`)), 800);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  if(document.body.dataset.page !== 'tracking') return;
-  loadTrackingSettings();
-  trackingPoll();
-  const saveBtn = document.getElementById('save-tracking-settings');
-  if(saveBtn) saveBtn.addEventListener('click', saveTrackingSettings);
-  const toggleBtn = document.getElementById('btn-toggle-tracking');
-  if(toggleBtn) toggleBtn.addEventListener('click', toggleTracking);
-  const copyBtn = document.getElementById('btn-copy-tracking-debug');
-  if(copyBtn) copyBtn.addEventListener('click', copyTrackingDebug);
+  if (!trackingPage()) return;
+
+  trackingBoot().catch(err => trackingLog(`boot failed: ${err.message || err}`));
+
+  $t('toggle-tracking').addEventListener('click', async () => {
+    try {
+      if (trackingCurrentState?.tracking_enabled) {
+        await trackingFetch('/api/tracking/disable', {method:'POST'});
+        trackingLog('tracking disabled');
+      } else {
+        await trackingFetch('/api/tracking/enable', {method:'POST'});
+        trackingLog('tracking enabled');
+      }
+      trackingRefresh();
+    } catch (err) { trackingLog(`toggle failed: ${err.message || err}`); }
+  });
+
+  $t('save-config').addEventListener('click', async () => {
+    try {
+      const payload = {tracking: trackingReadConfigForm()};
+      await trackingFetch('/api/tracking/config', {method:'POST', body: JSON.stringify(payload)});
+      trackingLog(`config saved for detector=${payload.tracking.detector}`);
+      if (window.setActionMessage) setActionMessage('Tracking config saved.', 'success');
+      trackingRefresh();
+    } catch (err) {
+      trackingLog(`save failed: ${err.message || err}`);
+      if (window.setActionMessage) setActionMessage('Failed to save tracking config.', 'error');
+    }
+  });
+
+  $t('servo-home').addEventListener('click', async () => {
+    try {
+      const res = await trackingFetch('/api/tracking/servo/home', {method:'POST'});
+      trackingLog(`servo homed pan=${res.servo.pan.angle} tilt=${res.servo.tilt.angle}`);
+      trackingRefresh();
+    } catch (err) { trackingLog(`home failed: ${err.message || err}`); }
+  });
+
+  $t('apply-servo').addEventListener('click', () => trackingApplyServo().catch(err => trackingLog(`servo apply failed: ${err.message || err}`)));
+  $t('refresh-now').addEventListener('click', () => trackingRefresh().catch(err => trackingLog(`refresh failed: ${err.message || err}`)));
+  $t('clear-console').addEventListener('click', () => { trackingConsoleEl().textContent = ''; });
+  $t('copy-console').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(trackingConsoleEl().textContent);
+      trackingLog('console copied to clipboard');
+    } catch (err) { trackingLog(`copy failed: ${err.message || err}`); }
+  });
+
+  const copyDebugBtn = $t('copy-debug');
+  if (copyDebugBtn) {
+    copyDebugBtn.addEventListener('click', () => trackingCopyDebugSnapshot().catch(err => trackingLog(`copy debug failed: ${err.message || err}`)));
+  }
+
+  document.querySelectorAll('[data-nudge]').forEach(btn => btn.addEventListener('click', async () => {
+    try {
+      const res = await trackingFetch('/api/tracking/servo/nudge', {method:'POST', body: JSON.stringify({direction: btn.dataset.nudge})});
+      trackingLog(`servo nudged ${btn.dataset.nudge} -> pan=${res.servo.pan.angle} tilt=${res.servo.tilt.angle}`);
+      trackingRefresh();
+    } catch (err) { trackingLog(`nudge failed: ${err.message || err}`); }
+  }));
+
+  $t('detector').addEventListener('change', () => {
+    if ($t('detector').value === 'yolo') {
+      trackingSetValue('enable_yolo', 'true');
+      trackingLog('YOLO selected — Enable YOLO automatically set to Yes. Save Tracking Config to apply.');
+    }
+  });
 });
+
+
+async function trackingCopyDebugSnapshot() {
+  const debug = await trackingFetch('/api/tracking/debug');
+  const detectors = await trackingFetch('/api/tracking/detectors');
+  const snapshot = {
+    ts: new Date().toISOString(),
+    state: trackingCurrentState,
+    config: trackingCurrentConfig,
+    debug,
+    detectors: detectors.details || {},
+  };
+  const body = JSON.stringify(snapshot, null, 2);
+  await navigator.clipboard.writeText(body);
+  trackingLog('debug snapshot copied to clipboard');
+}

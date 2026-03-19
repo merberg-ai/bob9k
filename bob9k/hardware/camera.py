@@ -111,6 +111,37 @@ class CameraWrapper:
                 self.logger.warning('Camera frame capture failed: %s', exc)
                 return b''
 
+
+    def read_bgr(self):
+        if not self.running or self.picam2 is None:
+            return None
+        with self._lock:
+            if not self.running or self.picam2 is None:
+                return None
+            try:
+                frame = self.picam2.capture_array()
+                if frame is None:
+                    return None
+                try:
+                    import cv2
+                    return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                except Exception:
+                    return frame
+            except Exception as exc:
+                self.last_error = str(exc)
+                self.logger.warning('Camera BGR capture failed: %s', exc)
+                return None
+
+    def encode_jpeg(self, frame_bgr) -> bytes:
+        try:
+            import cv2
+            ok, buf = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return buf.tobytes() if ok else b''
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.logger.warning('Camera JPEG encode failed: %s', exc)
+            return b''
+
     def get_settings(self) -> dict[str, Any]:
         return dict(self.current_settings)
 

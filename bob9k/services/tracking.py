@@ -2,281 +2,234 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
 
 from bob9k.config import load_runtime_config, save_runtime_config
-from bob9k.vision.detectors.haar_face import HaarFaceDetector
-from bob9k.vision.detectors.haar_body import HaarBodyDetector
-from bob9k.vision.detectors.motion import MotionDetector
+from bob9k.vision.detectors import build_detector
 from bob9k.vision.tracker import VisionTracker
 
-
-def get_detector(name: str):
-    if name == 'haar_face':
-        return HaarFaceDetector()
-    elif name == 'haar_body':
-        return HaarBodyDetector()
-    elif name == 'motion':
-        return MotionDetector()
-    return None
+try:
+    import psutil  # type: ignore
+except Exception:  # pragma: no cover
+    psutil = None
 
 
 class TrackingService:
-    DEFAULT_CONFIG = {
+    DEFAULTS = {
         'enabled': False,
         'mode': 'camera_track',
-        'detector': 'haar_face',
-        'target_label': 'face',
-        'pan_gain': 0.05,
-        'tilt_gain': 0.05,
-        'x_deadzone_px': 64,
-        'y_deadzone_px': 48,
+        'detector': 'face',
+        'target_label': '',
+        'yolo_model': 'yolov8n.pt',
+        'enable_yolo': False,
+        'yolo_imgsz': 320,
+        'yolo_classes': [],
+        'confidence_min': 0.45,
+        'max_results': 20,
+        'min_area': 1500,
+        'min_target_area': 900,
+        'pan_gain': 0.06,
+        'tilt_gain': 0.06,
+        'x_deadzone_px': 48,
+        'y_deadzone_px': 36,
         'smoothing_alpha': 0.4,
-        'scan_when_lost': False,
-        'lost_timeout_s': 2.0,
-        'target_distance_cm': 30.0,
-        'distance_tolerance_cm': 5.0,
-        'confidence_threshold': 0.45,
-        'min_detection_area': 0.01,
-        'min_target_area': 0.02,
-        'edge_reject_margin_px': 12,
-        'detect_only_mode': False,
-        'diagnostics_overlay': True,
-        'lock_hysteresis': True,
-        'lock_iou_threshold': 0.35,
-        'switch_margin': 0.15,
-        'min_lock_frames': 3,
-        'process_every_n_frames': 1,
-        'max_servo_step': 4,
-        'servo_rate_limit_hz': 15,
+        'scan_when_lost': True,
+        'scan_step': 2,
+        'scan_tilt_step': 0,
+        'lost_timeout_s': 1.5,
+        'process_every_n_frames': 3,
+        'box_padding_px': 8,
+        'show_labels': True,
+        'show_crosshair': True,
+        'show_metrics_overlay': True,
+        'preferred_target': 'largest',
+        'servo_idle_hold_s': 0.35,
+        'invert_error_x': False,
+        'invert_error_y': False,
+        'jpeg_every_n_frames': 2,
+        'idle_sleep_s': 0.02,
+        'stats_log_interval_s': 10.0,
+        'overlay_enabled': True,
     }
 
     def __init__(self, runtime, logger):
         self.runtime = runtime
         self.logger = logger
+        self._stop = threading.Event()
         self._thread = None
-        self._stop_event = threading.Event()
-        self._last_target_seen_ts: float | None = None
-        self._last_servo_write_ts = 0.0
-        self._frame_counter = 0
+        self._config = self._normalize(dict(runtime.config.get('tracking', {})))
+        self._detector = build_detector(self._config.get('detector', 'face'), self._config)
+        self._tracker = VisionTracker(self._config)
+        self._last_seen_ts = None
+        self._last_move_ts = 0.0
+        self._scan_dir = 1
+        self._scan_tilt_dir = 1
+        self._latest_jpeg = b''
+        self._latest_detections = []
+        self._latest_target = None
+        self._fps_window_ts = time.time()
+        self._fps_counter = 0
+        self._fps_actual = 0.0
+        self._process = psutil.Process() if psutil else None
+        self._last_stats_log_ts = 0.0
+        self._mjpeg_clients = 0
+        self._mjpeg_clients_lock = threading.Lock()
+        self._cv_ok = self._check_cv()
+        self._sync_state_basics()
 
+    def _check_cv(self) -> bool:
         try:
             import cv2  # noqa: F401
             import numpy as np  # noqa: F401
-            self._cv_available = True
-        except ImportError:
-            self._cv_available = False
+            return True
+        except Exception:
+            return False
 
-        self._tracking_config = self._build_tracking_config(self.runtime.config.get('tracking', {}))
-        self.detector = get_detector(self._tracking_config.get('detector', 'haar_face')) if self._cv_available else None
-        self.tracker = VisionTracker(self._tracking_config)
-        self.target_distance_cm = float(self._tracking_config.get('target_distance_cm', 30.0))
-        self.distance_tolerance_cm = float(self._tracking_config.get('distance_tolerance_cm', 5.0))
+    def _normalize(self, source: dict) -> dict:
+        cfg = dict(self.DEFAULTS)
+        cfg.update(source or {})
+        cfg['enabled'] = bool(cfg.get('enabled', False))
+        cfg['mode'] = str(cfg.get('mode', 'camera_track')).strip().lower()
+        if cfg['mode'] not in {'off', 'camera_track'}:
+            cfg['mode'] = 'camera_track'
+        detector = str(cfg.get('detector', 'face')).strip().lower()
+        aliases = {'haar_face': 'face', 'haar_body': 'body'}
+        cfg['detector'] = aliases.get(detector, detector)
+        cfg['target_label'] = str(cfg.get('target_label', '')).strip().lower()
+        raw_classes = cfg.get('yolo_classes', [])
+        if isinstance(raw_classes, str):
+            raw_classes = [x.strip().lower() for x in raw_classes.split(',') if x.strip()]
+        cfg['yolo_classes'] = raw_classes
+        cfg['preferred_target'] = str(cfg.get('preferred_target', 'largest')).strip().lower()
+        for name in (
+            'confidence_min', 'pan_gain', 'tilt_gain', 'smoothing_alpha', 'lost_timeout_s',
+            'servo_idle_hold_s', 'idle_sleep_s', 'stats_log_interval_s',
+        ):
+            cfg[name] = float(cfg.get(name, self.DEFAULTS[name]))
+        for name in (
+            'max_results', 'min_area', 'min_target_area', 'x_deadzone_px', 'y_deadzone_px', 'scan_step',
+            'scan_tilt_step', 'process_every_n_frames', 'box_padding_px', 'yolo_imgsz', 'jpeg_every_n_frames',
+        ):
+            cfg[name] = int(cfg.get(name, self.DEFAULTS[name]))
+        for name in ('scan_when_lost', 'show_labels', 'show_crosshair', 'show_metrics_overlay', 'invert_error_x', 'invert_error_y', 'enable_yolo', 'overlay_enabled'):
+            cfg[name] = bool(cfg.get(name, self.DEFAULTS[name]))
+        cfg['confidence_min'] = max(0.0, min(1.0, cfg['confidence_min']))
+        cfg['smoothing_alpha'] = max(0.0, min(1.0, cfg['smoothing_alpha']))
+        cfg['process_every_n_frames'] = max(1, cfg['process_every_n_frames'])
+        cfg['box_padding_px'] = max(0, cfg['box_padding_px'])
+        cfg['jpeg_every_n_frames'] = max(1, cfg['jpeg_every_n_frames'])
+        cfg['yolo_imgsz'] = max(160, int(cfg['yolo_imgsz']))
+        cfg['idle_sleep_s'] = max(0.005, float(cfg['idle_sleep_s']))
+        cfg['stats_log_interval_s'] = max(3.0, float(cfg['stats_log_interval_s']))
+        return cfg
 
-        self.runtime.state.tracking_mode = str(self._tracking_config.get('mode', 'camera_track'))
-        self.runtime.state.tracking_detector = str(self._tracking_config.get('detector', 'haar_face'))
-        self.runtime.state.tracking_enabled = bool(self._tracking_config.get('enabled', False))
-        self.runtime.state.tracking_target_acquired = False
-        self.runtime.state.tracking_disable_reason = None
-        self.runtime.state.tracking_detect_only_mode = bool(self._tracking_config.get('detect_only_mode', False))
-        self._update_detector_status()
+    def _sync_state_basics(self):
+        state = self.runtime.state
+        state.tracking_enabled = bool(self._config.get('enabled', False))
+        state.tracking_mode = self._config.get('mode', 'camera_track')
+        state.tracking_detector = self._config.get('detector', 'face')
+        state.tracking_preferred_target = self._config.get('preferred_target', 'largest')
+        state.tracking_overlay_enabled = bool(self._config.get('overlay_enabled', True))
+        state.tracking_detector_available = bool(self._detector.is_available()) if self._detector else False
+        state.tracking_detector_status = self.get_detector_status()
+        state.tracking_yolo_available = self.yolo_available()
+        state.tracking_detector_details = self.get_detector_details()
 
-    def _build_tracking_config(self, overrides: dict[str, Any] | None) -> dict[str, Any]:
-        cfg = dict(self.DEFAULT_CONFIG)
-        if overrides:
-            cfg.update(overrides)
-        return self._normalize_tracking_config(cfg)[0]
+    def get_config(self):
+        return dict(self._config)
 
-    def _normalize_tracking_config(self, source: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
-        source = source or {}
-        cfg = dict(self.DEFAULT_CONFIG)
-        warnings: list[str] = []
-
-        def _as_float(name: str, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
-            raw = source.get(name, default)
+    def get_detector_status(self):
+        det = self._detector
+        if det is None:
+            return 'missing'
+        if hasattr(det, 'status'):
             try:
-                value = float(raw)
-            except (TypeError, ValueError):
-                warnings.append(f'{name} value {raw!r} is invalid, using {default!r}.')
-                value = float(default)
-            if minimum is not None:
-                value = max(minimum, value)
-            if maximum is not None:
-                value = min(maximum, value)
-            return value
+                return det.status()
+            except Exception:
+                return 'unknown'
+        return 'ready' if det.is_available() else 'unavailable'
 
-        def _as_int(name: str, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
-            raw = source.get(name, default)
-            try:
-                value = int(raw)
-            except (TypeError, ValueError):
-                warnings.append(f'{name} value {raw!r} is invalid, using {default!r}.')
-                value = int(default)
-            if minimum is not None:
-                value = max(minimum, value)
-            if maximum is not None:
-                value = min(maximum, value)
-            return value
-
-        cfg['enabled'] = bool(source.get('enabled', cfg['enabled']))
-        cfg['detect_only_mode'] = bool(source.get('detect_only_mode', cfg['detect_only_mode']))
-        cfg['diagnostics_overlay'] = bool(source.get('diagnostics_overlay', cfg['diagnostics_overlay']))
-        cfg['lock_hysteresis'] = bool(source.get('lock_hysteresis', cfg['lock_hysteresis']))
-
-        mode = str(source.get('mode', cfg['mode'])).strip().lower()
-        if mode not in {'off', 'camera_track'}:
-            warnings.append(f'mode value {mode!r} is unsupported, using {cfg["mode"]!r}.')
-            mode = cfg['mode']
-        cfg['mode'] = mode
-
-        detector = str(source.get('detector', cfg['detector'])).strip().lower()
-        if detector not in {'haar_face', 'haar_body', 'motion'}:
-            warnings.append(f'detector value {detector!r} is unsupported, using {cfg["detector"]!r}.')
-            detector = cfg['detector']
-        cfg['detector'] = detector
-
-        cfg['target_label'] = str(source.get('target_label', cfg['target_label'])).strip().lower() or 'face'
-        cfg['pan_gain'] = _as_float('pan_gain', float(cfg['pan_gain']), 0.0, 1.0)
-        cfg['tilt_gain'] = _as_float('tilt_gain', float(cfg['tilt_gain']), 0.0, 1.0)
-        cfg['x_deadzone_px'] = _as_int('x_deadzone_px', int(cfg['x_deadzone_px']), 0, 2000)
-        cfg['y_deadzone_px'] = _as_int('y_deadzone_px', int(cfg['y_deadzone_px']), 0, 2000)
-        cfg['smoothing_alpha'] = _as_float('smoothing_alpha', float(cfg['smoothing_alpha']), 0.0, 1.0)
-        cfg['scan_when_lost'] = bool(source.get('scan_when_lost', cfg['scan_when_lost']))
-        cfg['lost_timeout_s'] = _as_float('lost_timeout_s', float(cfg['lost_timeout_s']), 0.1, 60.0)
-        cfg['target_distance_cm'] = _as_float('target_distance_cm', float(cfg['target_distance_cm']), 1.0, 500.0)
-        cfg['distance_tolerance_cm'] = _as_float('distance_tolerance_cm', float(cfg['distance_tolerance_cm']), 0.0, 100.0)
-        cfg['confidence_threshold'] = _as_float('confidence_threshold', float(cfg['confidence_threshold']), 0.0, 1.0)
-        cfg['min_detection_area'] = _as_float('min_detection_area', float(cfg['min_detection_area']), 0.0, 1.0)
-        cfg['min_target_area'] = _as_float('min_target_area', float(cfg['min_target_area']), 0.0, 1.0)
-        cfg['edge_reject_margin_px'] = _as_int('edge_reject_margin_px', int(cfg['edge_reject_margin_px']), 0, 1000)
-        cfg['lock_iou_threshold'] = _as_float('lock_iou_threshold', float(cfg['lock_iou_threshold']), 0.0, 1.0)
-        cfg['switch_margin'] = _as_float('switch_margin', float(cfg['switch_margin']), 0.0, 10.0)
-        cfg['min_lock_frames'] = _as_int('min_lock_frames', int(cfg['min_lock_frames']), 1, 100)
-        cfg['process_every_n_frames'] = _as_int('process_every_n_frames', int(cfg['process_every_n_frames']), 1, 30)
-        cfg['max_servo_step'] = _as_float('max_servo_step', float(cfg['max_servo_step']), 0.1, 90.0)
-        cfg['servo_rate_limit_hz'] = _as_float('servo_rate_limit_hz', float(cfg['servo_rate_limit_hz']), 1.0, 120.0)
-        return cfg, warnings
-
-    def _update_detector_status(self) -> dict[str, Any]:
-        status = {
-            'opencv_available': self._cv_available,
-            'active_detector': self._tracking_config.get('detector', 'haar_face'),
-            'detectors': {},
-            'yolo': {
-                'available': False,
-                'enabled_by_config': False,
-                'dependency_ok': False,
-                'model_ready': False,
-                'reason': 'not_implemented_in_this_build',
+    def get_detector_details(self):
+        det = self._detector
+        name = self._config.get('detector', 'face')
+        status = self.get_detector_status()
+        available = bool(det.is_available()) if det else False
+        details = {
+            'selected': name,
+            'available': available,
+            'status': status,
+            'yolo_available': self.yolo_available(),
+            'enable_yolo': bool(self._config.get('enable_yolo', False)),
+            'yolo_model': self._config.get('yolo_model', 'yolov8n.pt'),
+            'yolo_classes': list(self._config.get('yolo_classes', []) or []),
+            'detectors': {
+                'face': {'available': True, 'status': 'ready'},
+                'body': {'available': True, 'status': 'ready'},
+                'motion': {'available': True, 'status': 'ready'},
+                'yolo': {
+                    'available': self.yolo_available() and bool(self._config.get('enable_yolo', False)),
+                    'status': status if name == 'yolo' else ('available' if self.yolo_available() else 'unavailable: ultralytics import failed'),
+                },
             },
         }
-        for name in ('haar_face', 'haar_body', 'motion'):
-            detector = get_detector(name) if self._cv_available else None
-            if detector is None:
-                detector_status = {
-                    'name': name,
-                    'available': False,
-                    'enabled_by_config': name == self._tracking_config.get('detector', 'haar_face'),
-                    'dependency_ok': False,
-                    'model_ready': False,
-                    'reason': 'opencv_unavailable',
-                }
-            else:
-                detector_status = detector.get_status()
-                detector_status['enabled_by_config'] = name == self._tracking_config.get('detector', 'haar_face')
-            status['detectors'][name] = detector_status
-        self.runtime.state.tracking_detector_status = status
-        active = status['detectors'].get(self._tracking_config.get('detector', 'haar_face'), {})
-        self.runtime.state.tracking_detector_reason = active.get('reason')
-        return status
+        if det is not None and hasattr(det, '_error') and getattr(det, '_error', None):
+            details['reason'] = getattr(det, '_error')
+        return details
 
-    def get_detector_status(self) -> dict[str, Any]:
-        return self._update_detector_status()
+    def yolo_available(self):
+        try:
+            from ultralytics import YOLO  # noqa: F401
+            return True
+        except Exception:
+            return False
 
-    def get_config(self) -> dict[str, Any]:
-        return dict(self._tracking_config)
-
-    def update_config(self, updates: dict[str, Any], persist: bool = True) -> tuple[dict[str, Any], list[str]]:
-        merged = dict(self._tracking_config)
-        merged.update(updates or {})
-        normalized, warnings = self._normalize_tracking_config(merged)
-        self._tracking_config = normalized
-        self.tracker.apply_config(normalized)
-        self.target_distance_cm = float(normalized.get('target_distance_cm', 30.0))
-        self.distance_tolerance_cm = float(normalized.get('distance_tolerance_cm', 5.0))
-
-        self.runtime.config['tracking'] = dict(normalized)
-        self.runtime.state.tracking_mode = str(normalized.get('mode', 'camera_track'))
-        self.runtime.state.tracking_detector = str(normalized.get('detector', 'haar_face'))
-        self.runtime.state.tracking_detect_only_mode = bool(normalized.get('detect_only_mode', False))
-
-        if 'detector' in (updates or {}) and self._cv_available:
-            self.detector = get_detector(normalized.get('detector', 'haar_face'))
-
-        if 'enabled' in (updates or {}):
-            self.runtime.state.tracking_enabled = bool(normalized.get('enabled', False))
-
-        self._update_detector_status()
-
+    def update_config(self, patch: dict, persist: bool = True):
+        merged = dict(self._config)
+        merged.update(patch or {})
+        self._config = self._normalize(merged)
+        self._tracker.apply_config(self._config)
+        self.runtime.config['tracking'] = dict(self._config)
+        self._detector = build_detector(self._config.get('detector', 'face'), self._config)
+        self._sync_state_basics()
         if persist:
             runtime_cfg = load_runtime_config()
-            runtime_cfg['tracking'] = dict(normalized)
+            runtime_cfg['tracking'] = dict(self._config)
+            save_runtime_config(runtime_cfg)
+        return dict(self._config), []
+
+    def set_enabled(self, enabled: bool, persist: bool = False):
+        self._config['enabled'] = bool(enabled)
+        self.runtime.config['tracking'] = dict(self._config)
+        self.runtime.state.tracking_enabled = bool(enabled)
+        self.runtime.state.tracking_scan_active = False
+        self.runtime.state.tracking_disable_reason = None if enabled else self.runtime.state.tracking_disable_reason
+        if persist:
+            runtime_cfg = load_runtime_config()
+            runtime_cfg['tracking'] = dict(self._config)
             save_runtime_config(runtime_cfg)
 
-        return dict(normalized), warnings
-
-    def start(self):
-        if not self._cv_available:
-            self.logger.warning('OpenCV or NumPy not installed; tracking support disabled.')
-            self.runtime.state.tracking_disable_reason = 'opencv_unavailable'
-            return
-        if self.detector is None or not self.detector.is_available():
-            self.logger.warning('Tracking detector unavailable; tracking support disabled.')
-            self.runtime.state.tracking_disable_reason = 'detector_unavailable'
-            self._update_detector_status()
-            return
-        if self._thread and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._tracking_loop, name='bob9k-tracking', daemon=True)
-        self._thread.start()
-        self.logger.info('Tracking background service started.')
-
-    def stop(self):
-        self._stop_event.set()
-        if self._thread:
-            self._thread = None
-
     def enable(self):
-        if not self._cv_available:
+        if not self._cv_ok:
             self.runtime.state.tracking_disable_reason = 'opencv_unavailable'
-            self.logger.warning('Cannot enable tracking: OpenCV/NumPy unavailable.')
             return
-        if self.detector is None or not self.detector.is_available():
+        if self._detector is None or not self._detector.is_available():
             self.runtime.state.tracking_disable_reason = 'detector_unavailable'
-            self.logger.warning('Cannot enable tracking: detector unavailable.')
-            self._update_detector_status()
             return
-        self.runtime.state.tracking_disable_reason = None
-        self.runtime.state.tracking_enabled = True
-        self.runtime.state.tracking_mode = str(self._tracking_config.get('mode', 'camera_track'))
-        self.runtime.state.tracking_detect_only_mode = bool(self._tracking_config.get('detect_only_mode', False))
-        self._tracking_config['enabled'] = True
-        self.runtime.config['tracking'] = dict(self._tracking_config)
-        self.logger.info('Object tracking ENABLED.')
+        self.set_enabled(True, persist=True)
 
     def disable(self, reason: str | None = None):
-        if self.runtime.state.tracking_enabled:
-            self.runtime.state.tracking_enabled = False
-            self.logger.info('Object tracking DISABLED.')
-            if not self.runtime.registry.motors.motion_locked:
-                self.runtime.registry.motors.stop()
-        self._tracking_config['enabled'] = False
-        self.runtime.config['tracking'] = dict(self._tracking_config)
+        self.set_enabled(False, persist=True)
         self.runtime.state.tracking_target_acquired = False
-        self.runtime.state.tracking_target_locked = False
-        if reason is not None:
-            self.runtime.state.tracking_disable_reason = reason
+        self.runtime.state.tracking_box = None
+        self.runtime.state.tracking_target_label = None
+        self.runtime.state.tracking_target_confidence = None
+        self.runtime.state.tracking_scan_active = False
+        self.runtime.state.tracking_disable_reason = reason
+        motors = getattr(self.runtime.registry, 'motors', None)
+        if motors and not getattr(motors, 'motion_locked', False):
+            try:
+                motors.stop()
+            except Exception:
+                pass
 
     def toggle(self):
         if self.runtime.state.tracking_enabled:
@@ -284,138 +237,269 @@ class TrackingService:
         else:
             self.enable()
 
-    def _filter_detections(self, detections, frame_w: int, frame_h: int):
-        filtered = []
-        margin = int(self._tracking_config.get('edge_reject_margin_px', 12))
-        min_area_ratio = float(self._tracking_config.get('min_detection_area', 0.01))
-        for det in detections or []:
-            if det.confidence < float(self._tracking_config.get('confidence_threshold', 0.45)):
-                continue
-            area_ratio = float(det.area) / max(1.0, float(frame_w * frame_h))
-            if area_ratio < min_area_ratio:
-                continue
-            if det.x <= margin or det.y <= margin or (det.x + det.w) >= (frame_w - margin) or (det.y + det.h) >= (frame_h - margin):
-                continue
-            if area_ratio > 0.85:
-                continue
-            filtered.append(det)
-        return filtered
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._loop, daemon=True, name='bob9k-tracking')
+        self._thread.start()
+        self.logger.info('Tracking background service started. detector=%s', self._config.get('detector', 'face'))
 
-    def _tracking_loop(self):
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2.0)
+
+    def _distance_from_center(self, det, frame_w, frame_h):
+        dx = det.center_x - (frame_w / 2.0)
+        dy = det.center_y - (frame_h / 2.0)
+        return (dx * dx) + (dy * dy)
+
+    def _choose_target(self, detections, frame_w, frame_h):
+        return self._tracker.choose_target(detections, frame_w, frame_h)
+
+    def _draw_overlay(self, frame, detections, target):
         import cv2
-        import numpy as np
+        h, w = frame.shape[:2]
+        if self._config.get('show_crosshair', True):
+            cx, cy = w // 2, h // 2
+            cv2.line(frame, (cx - 12, cy), (cx + 12, cy), (255, 255, 255), 1)
+            cv2.line(frame, (cx, cy - 12), (cx, cy + 12), (255, 255, 255), 1)
+        pad = int(self._config.get('box_padding_px', 0))
+        for det in detections:
+            x1 = max(0, det.x - pad)
+            y1 = max(0, det.y - pad)
+            x2 = min(w - 1, det.x + det.w + pad)
+            y2 = min(h - 1, det.y + det.h + pad)
+            color = (140, 140, 140)
+            thickness = 1
+            if target and det.x == target.x and det.y == target.y and det.w == target.w and det.h == target.h:
+                color = (0, 255, 204)
+                thickness = 2
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+            if self._config.get('show_labels', True):
+                label = f"{det.label} {det.confidence:.2f}" if det.confidence < 0.999 else det.label
+                cv2.putText(frame, label, (x1, max(12, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+        if self._config.get('show_metrics_overlay', True):
+            state = self.runtime.state
+            line1 = f"detector={state.tracking_detector} tracking={'on' if state.tracking_enabled else 'off'} target={'yes' if state.tracking_target_acquired else 'no'}"
+            line2 = f"fps={self._fps_actual:.1f} pan={state.pan_angle} tilt={state.tilt_angle} detections={len(detections)} clients={self._mjpeg_clients}"
+            cv2.putText(frame, line1, (8, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(frame, line2, (8, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        return frame
 
-        last_log_time = 0.0
+    def _update_fps(self):
+        self._fps_counter += 1
+        now = time.time()
+        elapsed = now - self._fps_window_ts
+        if elapsed >= 1.0:
+            self._fps_actual = self._fps_counter / elapsed
+            self.runtime.state.tracking_fps_actual = round(self._fps_actual, 2)
+            self._fps_counter = 0
+            self._fps_window_ts = now
 
-        while not self._stop_event.is_set():
-            time.sleep(0.05)
+    def _move_to_target(self, frame, target):
+        servo = getattr(self.runtime.registry, 'camera_servo', None)
+        if servo is None or target is None:
+            return
+        next_pan, next_tilt = self._tracker.move_to_target(
+            target,
+            frame.shape[1],
+            frame.shape[0],
+            getattr(servo, 'pan_angle', self.runtime.state.pan_angle),
+            getattr(servo, 'tilt_angle', self.runtime.state.tilt_angle),
+        )
+        if next_pan is not None:
+            servo.set_pan(int(round(next_pan)))
+        if next_tilt is not None:
+            servo.set_tilt(int(round(next_tilt)))
+        self.runtime.state.pan_angle = getattr(servo, 'pan_angle', self.runtime.state.pan_angle)
+        self.runtime.state.tilt_angle = getattr(servo, 'tilt_angle', self.runtime.state.tilt_angle)
+        self.runtime.state.tracking_scan_active = False
+        self._last_move_ts = time.time()
 
-            if not self.runtime.state.tracking_enabled:
+    def _scan_for_target(self):
+        servo = getattr(self.runtime.registry, 'camera_servo', None)
+        if servo is None:
+            return
+        if not bool(self._config.get('scan_when_lost', True)):
+            self.runtime.state.tracking_scan_active = False
+            return
+        now = time.time()
+        if self._last_seen_ts is not None and (now - self._last_seen_ts) < float(self._config.get('lost_timeout_s', 1.5)):
+            self.runtime.state.tracking_scan_active = False
+            return
+        pan = int(getattr(servo, 'pan_angle', self.runtime.state.pan_angle))
+        tilt = int(getattr(servo, 'tilt_angle', self.runtime.state.tilt_angle))
+        step = int(self._config.get('scan_step', 2))
+        tilt_step = int(self._config.get('scan_tilt_step', 0))
+        pan += step * self._scan_dir
+        if pan <= int(getattr(servo, 'pan_min', 40)) or pan >= int(getattr(servo, 'pan_max', 140)):
+            self._scan_dir *= -1
+        servo.set_pan(pan)
+        if tilt_step:
+            tilt += tilt_step * self._scan_tilt_dir
+            if tilt <= int(getattr(servo, 'tilt_min', 40)) or tilt >= int(getattr(servo, 'tilt_max', 140)):
+                self._scan_tilt_dir *= -1
+            servo.set_tilt(tilt)
+        self.runtime.state.pan_angle = getattr(servo, 'pan_angle', self.runtime.state.pan_angle)
+        self.runtime.state.tilt_angle = getattr(servo, 'tilt_angle', self.runtime.state.tilt_angle)
+        self.runtime.state.tracking_scan_active = True
+        self._last_move_ts = time.time()
+
+    def _current_rss_mb(self):
+        if self._process is None:
+            return None
+        try:
+            return round(self._process.memory_info().rss / (1024 * 1024), 1)
+        except Exception:
+            return None
+
+    def _maybe_log_stats(self):
+        now = time.time()
+        interval = float(self._config.get('stats_log_interval_s', 10.0))
+        if (now - self._last_stats_log_ts) < interval:
+            return
+        self._last_stats_log_ts = now
+        self.logger.info(
+            'Tracking stats: fps=%.2f rss_mb=%s detector=%s status=%s detections=%s clients=%s tracking=%s',
+            self._fps_actual,
+            self._current_rss_mb(),
+            self.runtime.state.tracking_detector,
+            self.runtime.state.tracking_detector_status,
+            self.runtime.state.tracking_last_detection_count,
+            self._mjpeg_clients,
+            self.runtime.state.tracking_enabled,
+        )
+
+    def _should_encode_jpeg(self, frame_counter: int) -> bool:
+        with self._mjpeg_clients_lock:
+            client_count = self._mjpeg_clients
+        self.runtime.state.tracking_mjpeg_clients = client_count
+        if client_count <= 0 and not self._latest_jpeg:
+            return True
+        if client_count <= 0:
+            return False
+        every_n = max(1, int(self._config.get('jpeg_every_n_frames', 2)))
+        return (frame_counter % every_n) == 0
+
+    def _loop(self):
+        frame_counter = 0
+        camera = getattr(self.runtime.registry, 'camera', None)
+        servo = getattr(self.runtime.registry, 'camera_servo', None)
+        motors = getattr(self.runtime.registry, 'motors', None)
+        while not self._stop.is_set():
+            cfg = self._config
+            if camera is None or servo is None:
+                self.runtime.state.tracking_disable_reason = 'hardware_missing'
+                time.sleep(0.2)
+                camera = getattr(self.runtime.registry, 'camera', None)
+                servo = getattr(self.runtime.registry, 'camera_servo', None)
                 continue
-
-            if self.runtime.state.tracking_mode == 'off':
-                self.disable(reason='mode_off')
+            frame = camera.read_bgr() if hasattr(camera, 'read_bgr') else None
+            if frame is None:
+                time.sleep(0.05)
                 continue
-
-            if getattr(self.runtime.registry.motors, 'motion_locked', False) or getattr(self.runtime.registry.motors, 'estop_latched', False):
-                self.disable(reason='motion_blocked')
-                continue
-
-            if getattr(self.runtime.registry.motors, 'state', 'stopped') != 'stopped':
-                self.runtime.registry.motors.stop()
-
-            camera = getattr(self.runtime.registry, 'camera', None)
-            camera_servo = getattr(self.runtime.registry, 'camera_servo', None)
-            if not camera or not camera_servo:
-                self.logger.warning('Tracking needs camera & camera_servo, but missing. Disabling.')
-                self.disable(reason='hardware_missing')
-                continue
-
-            frame_bytes = camera.get_frame()
-            if not frame_bytes:
-                continue
-
-            self._frame_counter += 1
-            if (self._frame_counter % int(self._tracking_config.get('process_every_n_frames', 1))) != 0:
-                continue
-
-            try:
-                np_arr = np.frombuffer(frame_bytes, np.uint8)
-                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-                if frame is None:
-                    continue
-
-                raw_detections = self.detector.detect(frame) if self.detector else []
-                detections = self._filter_detections(raw_detections, frame.shape[1], frame.shape[0])
-                tracked, new_pan, new_tilt = self.tracker.update(
-                    detections,
-                    frame.shape[1],
-                    frame.shape[0],
-                    camera_servo.pan_angle,
-                    camera_servo.tilt_angle,
-                )
-
-                self.runtime.state.tracking_error_x = tracked.error_x
-                self.runtime.state.tracking_error_y = tracked.error_y
-                self.runtime.state.tracking_target_locked = tracked.locked
-                self.runtime.state.tracking_target_lock_frames = tracked.lock_frames
-                self.runtime.state.tracking_target_switch_reason = tracked.switch_reason
-                self.runtime.state.tracking_debug = {
-                    'candidate_count': tracked.candidate_count,
-                    'raw_candidate_count': len(raw_detections),
-                    'filtered_candidate_count': len(detections),
-                    'detect_only_mode': bool(self._tracking_config.get('detect_only_mode', False)),
-                    'detector_status': self.runtime.state.tracking_detector_status,
-                }
-
-                if tracked.acquired and tracked.detection is not None:
-                    self._last_target_seen_ts = time.time()
-                    self.runtime.state.tracking_target_acquired = True
-                    self.runtime.state.tracking_disable_reason = None
-                    self.runtime.state.tracking_target_lost_age_s = 0.0
-                    det = tracked.detection
-                    self.runtime.state.tracking_box = (det.x, det.y, det.w, det.h)
-                    self.runtime.state.tracking_target_label = det.label
-                    self.runtime.state.tracking_target_confidence = round(float(det.confidence), 3)
-                    self.runtime.state.tracking_target_area_ratio = round(float(det.area) / max(1.0, float(frame.shape[0] * frame.shape[1])), 4)
-                    self.logger.debug(
-                        'Tracking: target=%s area=%s err=(%.1f, %.1f) lock=%s',
-                        det.label,
-                        det.area,
-                        tracked.error_x,
-                        tracked.error_y,
-                        tracked.locked,
+            frame_counter += 1
+            every_n = max(1, int(cfg.get('process_every_n_frames', 3)))
+            process_this = (frame_counter % every_n == 0)
+            detections = self._latest_detections
+            target = self._latest_target
+            if process_this:
+                try:
+                    suppress_motion = (
+                        cfg.get('detector') == 'motion' and
+                        (time.time() - self._last_move_ts) < float(cfg.get('servo_idle_hold_s', 0.35))
                     )
-                    servo_period = 1.0 / max(1.0, float(self._tracking_config.get('servo_rate_limit_hz', 15)))
-                    if not bool(self._tracking_config.get('detect_only_mode', False)) and (time.time() - self._last_servo_write_ts) >= servo_period:
-                        if new_pan is not None:
-                            camera_servo.set_pan(int(round(new_pan)))
-                        if new_tilt is not None:
-                            camera_servo.set_tilt(int(round(new_tilt)))
-                        self._last_servo_write_ts = time.time()
-                    self.runtime.state.pan_angle = camera_servo.pan_angle
-                    self.runtime.state.tilt_angle = camera_servo.tilt_angle
-                else:
-                    now = time.time()
-                    timeout = float(self._tracking_config.get('lost_timeout_s', 2.0))
-
-                    if self._last_target_seen_ts is not None and (now - self._last_target_seen_ts) <= timeout:
+                    detections = [] if suppress_motion else self._detector.detect(frame)
+                    target = self._choose_target(detections, frame.shape[1], frame.shape[0])
+                    self._latest_detections = detections
+                    self._latest_target = target
+                    self.runtime.state.tracking_last_detection_count = len(detections)
+                    self.runtime.state.tracking_detector_available = bool(self._detector.is_available())
+                    self.runtime.state.tracking_detector_status = self.get_detector_status()
+                    self.runtime.state.tracking_detector_details = self.get_detector_details()
+                    if target:
+                        self._last_seen_ts = time.time()
                         self.runtime.state.tracking_target_acquired = True
+                        self.runtime.state.tracking_box = (target.x, target.y, target.w, target.h)
+                        self.runtime.state.tracking_target_label = target.label
+                        self.runtime.state.tracking_target_confidence = float(target.confidence)
                         self.runtime.state.tracking_disable_reason = None
-                        self.runtime.state.tracking_target_lost_age_s = round(now - self._last_target_seen_ts, 3)
                     else:
                         self.runtime.state.tracking_target_acquired = False
-                        self.runtime.state.tracking_target_locked = False
                         self.runtime.state.tracking_box = None
                         self.runtime.state.tracking_target_label = None
                         self.runtime.state.tracking_target_confidence = None
-                        self.runtime.state.tracking_target_area_ratio = None
-                        self.runtime.state.tracking_target_lost_age_s = None if self._last_target_seen_ts is None else round(now - self._last_target_seen_ts, 3)
-                        if self._last_target_seen_ts is not None:
+                        if self._last_seen_ts is not None:
                             self.runtime.state.tracking_disable_reason = 'target_lost'
-                        if now - last_log_time > 2.0:
-                            self.logger.info('Tracking: no targets detected in the last 2 seconds')
-                            last_log_time = now
+                except Exception as exc:
+                    self.runtime.state.tracking_last_error = str(exc)
+                    self.runtime.state.tracking_detector_status = f'error: {exc}'
+                    self.runtime.state.tracking_target_acquired = False
+                    self.runtime.state.tracking_box = None
+                    self.runtime.state.tracking_target_label = None
+                    self.runtime.state.tracking_target_confidence = None
+                    self._latest_detections = []
+                    self._latest_target = None
+                    detections = []
+                    target = None
+                    self.logger.exception('Detector failure: %s', exc)
 
-            except Exception as exc:
-                self.logger.error(f'Error in tracking loop: {exc}')
+            if motors and (getattr(motors, 'motion_locked', False) or getattr(motors, 'estop_latched', False)):
+                if self.runtime.state.tracking_enabled:
+                    self.disable(reason='motion_blocked')
+
+            if self.runtime.state.tracking_enabled and self.runtime.state.tracking_mode != 'off':
+                if motors and getattr(motors, 'state', 'stopped') != 'stopped':
+                    try:
+                        motors.stop()
+                    except Exception:
+                        pass
+                if target:
+                    self._move_to_target(frame, target)
+                else:
+                    self._scan_for_target()
+            else:
+                self.runtime.state.tracking_scan_active = False
+
+            self.runtime.state.tracking_frame_size = (int(frame.shape[1]), int(frame.shape[0]))
+            self._update_fps()
+            self.runtime.state.tracking_metrics = {
+                'fps_target': getattr(camera, 'fps', None),
+                'fps_actual': round(self._fps_actual, 2),
+                'detections': self.runtime.state.tracking_last_detection_count,
+                'camera_backend': getattr(camera, '_backend', 'picamera2'),
+                'detector_status': self.runtime.state.tracking_detector_status,
+                'scan_active': self.runtime.state.tracking_scan_active,
+                'rss_mb': self._current_rss_mb(),
+                'mjpeg_clients': self.runtime.state.tracking_mjpeg_clients,
+                'jpeg_every_n_frames': int(cfg.get('jpeg_every_n_frames', 2)),
+                'process_every_n_frames': int(cfg.get('process_every_n_frames', 3)),
+                'yolo_imgsz': int(cfg.get('yolo_imgsz', 320)),
+            }
+            if bool(cfg.get('overlay_enabled', True)) and self._should_encode_jpeg(frame_counter):
+                draw_frame = self._draw_overlay(frame.copy(), detections or [], target)
+                self._latest_jpeg = camera.encode_jpeg(draw_frame) if hasattr(camera, 'encode_jpeg') else b''
+            self._maybe_log_stats()
+            time.sleep(max(float(cfg.get('idle_sleep_s', 0.02)), 1.0 / max(1, getattr(camera, 'fps', 20))))
+
+    def mjpeg(self):
+        with self._mjpeg_clients_lock:
+            self._mjpeg_clients += 1
+        self.runtime.state.tracking_mjpeg_clients = self._mjpeg_clients
+        camera = getattr(self.runtime.registry, 'camera', None)
+        fps = max(1, getattr(camera, 'fps', 20)) if camera else 20
+        try:
+            while not self._stop.is_set():
+                frame = self._latest_jpeg
+                if frame:
+                    yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                else:
+                    raw = camera.get_frame() if camera else b''
+                    if raw:
+                        yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + raw + b'\r\n'
+                time.sleep(max(0.02, 1.0 / fps))
+        finally:
+            with self._mjpeg_clients_lock:
+                self._mjpeg_clients = max(0, self._mjpeg_clients - 1)
+            self.runtime.state.tracking_mjpeg_clients = self._mjpeg_clients
