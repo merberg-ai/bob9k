@@ -11,3 +11,4 @@ evdev>=1.7.0
 pexpect>=4.8.0
 opencv-python-headless
 numpy
+ultralytics>=8.2.0

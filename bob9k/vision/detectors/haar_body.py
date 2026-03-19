@@ -15,11 +15,23 @@ class HaarBodyDetector(BaseDetector):
     def is_available(self) -> bool:
         return self.cascade is not None and not self.cascade.empty()
 
+    def get_status(self) -> dict:
+        ok = self.is_available()
+        return {
+            'name': self.name,
+            'available': ok,
+            'enabled_by_config': True,
+            'dependency_ok': True,
+            'model_ready': ok,
+            'reason': None if ok else 'haar_cascade_missing',
+        }
+
     def detect(self, frame):
         if frame is None or not self.is_available():
             return []
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
         bodies = self.cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,

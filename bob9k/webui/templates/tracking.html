@@ -2,29 +2,40 @@
 {% block content %}
 <section class='card'>
   <h2>Tracking</h2>
-  <p class='muted'>Configure vision-based tracking and monitor the live feed. Bob9k will steer and pan to keep the target centered.</p>
+  <p class='muted'>Configure vision-based tracking, inspect detector health, and test in detect-only mode before letting the servos chase things around.</p>
 </section>
 
 <section class='card'>
   <div class="card-header">
     <h3>Tracking Control</h3>
-    <span id="tracking-status-badge" class="status-pill" style="border-color:rgba(255,255,255,0.15); color:var(--muted);">DISABLED</span>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+      <span id="tracking-status-badge" class="status-pill" style="border-color:rgba(255,255,255,0.15); color:var(--muted);">DISABLED</span>
+      <span id="tracking-lock-badge" class="status-pill" style="border-color:rgba(255,255,255,0.12); color:var(--muted);">UNLOCKED</span>
+      <span id="tracking-detectonly-badge" class="status-pill" style="border-color:rgba(255,255,255,0.12); color:var(--muted);">LIVE SERVO</span>
+    </div>
   </div>
-  <div style="margin-top:12px; display:flex; gap:10px;">
+  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
     <button id="btn-toggle-tracking" style="flex:1; padding:10px; border:1px solid var(--border); border-radius:10px; background:transparent; color:var(--text); font-weight:700; cursor:pointer;">Enable Tracking</button>
+    <button id="btn-copy-tracking-debug" style="padding:10px 14px; border:1px solid var(--border); border-radius:10px; background:transparent; color:var(--text); font-weight:700; cursor:pointer;">Copy Debug</button>
   </div>
+  <p id='tracking-state-summary' class='muted' style='margin-top:10px;'>Waiting for tracking state…</p>
 </section>
 
 <section class='card'>
   <h3>Live Feed & Console</h3>
-  <img
-    id='tracking-camera-preview'
-    class='camera-stream'
-    src='/video_feed?view=tracking'
-    alt='Live camera preview for tracking'
-  >
+  <img id='tracking-camera-preview' class='camera-stream' src='/video_feed?view=tracking' alt='Live camera preview for tracking'>
   <div id="tracking-console" style="margin-top:10px; height: 150px; overflow-y: scroll; background: #0a0a0a; color: #00ffcc; padding: 10px; font-family: monospace; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border);">
     <div>[System] Tracking console initialized.</div>
+  </div>
+</section>
+
+<section class='card'>
+  <h3>Detector Health</h3>
+  <div class='status-grid'>
+    <div><span>Active Detector</span><strong id='tracking-active-detector'>--</strong></div>
+    <div><span>Detector Status</span><strong id='tracking-detector-status'>--</strong></div>
+    <div><span>Detector Reason</span><strong id='tracking-detector-reason'>--</strong></div>
+    <div><span>YOLO Status</span><strong id='tracking-yolo-status'>Not wired yet</strong></div>
   </div>
 </section>
 
@@ -37,6 +48,13 @@
         <option value='haar_face'>Face</option>
         <option value='haar_body'>Full Body</option>
         <option value='motion'>Motion (any movement)</option>
+      </select>
+    </div>
+    <div>
+      <span>Detect Only Mode</span>
+      <select id='tracking-detect-only'>
+        <option value='false'>No</option>
+        <option value='true'>Yes</option>
       </select>
     </div>
     <div>
@@ -64,6 +82,14 @@
       <input id='tracking-y-deadzone' type='number' min='0' max='500' step='1' value='48'>
     </div>
     <div>
+      <span>Min Detection Area Ratio</span>
+      <input id='tracking-min-area' type='number' min='0' max='1' step='0.001' value='0.01'>
+    </div>
+    <div>
+      <span>Edge Reject Margin (px)</span>
+      <input id='tracking-edge-margin' type='number' min='0' max='200' step='1' value='12'>
+    </div>
+    <div>
       <span>Lost Timeout (s)</span>
       <input id='tracking-lost-timeout' type='number' min='0.5' max='10' step='0.1' value='2.0'>
     </div>
@@ -74,10 +100,32 @@
         <option value='true'>Yes</option>
       </select>
     </div>
+    <div>
+      <span>Switch Margin</span>
+      <input id='tracking-switch-margin' type='number' min='0' max='5' step='0.01' value='0.15'>
+    </div>
+    <div>
+      <span>Min Lock Frames</span>
+      <input id='tracking-min-lock-frames' type='number' min='1' max='20' step='1' value='3'>
+    </div>
   </div>
   <div class='button-grid'>
     <button id='save-tracking-settings'>Save Settings</button>
   </div>
   <p id='tracking-settings-message' class='muted'></p>
+</section>
+
+<section class='card'>
+  <h3>Live Debug</h3>
+  <div class='status-grid'>
+    <div><span>Target</span><strong id='tracking-debug-target'>--</strong></div>
+    <div><span>Confidence</span><strong id='tracking-debug-confidence'>--</strong></div>
+    <div><span>Area Ratio</span><strong id='tracking-debug-area'>--</strong></div>
+    <div><span>Error X / Y</span><strong id='tracking-debug-error'>--</strong></div>
+    <div><span>Lock Frames</span><strong id='tracking-debug-lockframes'>--</strong></div>
+    <div><span>Switch Reason</span><strong id='tracking-debug-switchreason'>--</strong></div>
+    <div><span>Lost Age</span><strong id='tracking-debug-lostage'>--</strong></div>
+    <div><span>Candidates</span><strong id='tracking-debug-candidates'>--</strong></div>
+  </div>
 </section>
 {% endblock %}

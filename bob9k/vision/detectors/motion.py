@@ -16,9 +16,22 @@ class MotionDetector(BaseDetector):
             varThreshold=40,
             detectShadows=False,
         )
+        self._warmup_frames = 12
+        self._seen_frames = 0
 
     def is_available(self) -> bool:
         return self._bg_sub is not None
+
+    def get_status(self) -> dict:
+        ok = self.is_available()
+        return {
+            'name': self.name,
+            'available': ok,
+            'enabled_by_config': True,
+            'dependency_ok': True,
+            'model_ready': ok,
+            'reason': None if ok else 'background_subtractor_unavailable',
+        }
 
     def detect(self, frame) -> list[Detection]:
         if frame is None or not self.is_available():
@@ -28,7 +41,10 @@ class MotionDetector(BaseDetector):
         gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
         mask = self._bg_sub.apply(gray)
-        # morphological clean-up to reduce noise
+        self._seen_frames += 1
+        if self._seen_frames <= self._warmup_frames:
+            return []
+
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.dilate(mask, kernel, iterations=2)
@@ -37,12 +53,15 @@ class MotionDetector(BaseDetector):
         if not contours:
             return []
 
-        # pick the largest contour that exceeds the minimum area
         best = max(contours, key=cv2.contourArea)
         if cv2.contourArea(best) < self.min_area:
             return []
 
         x, y, w, h = cv2.boundingRect(best)
+        frame_area = max(1, frame.shape[0] * frame.shape[1])
+        if (w * h) / frame_area > 0.85:
+            return []
+
         return [
             Detection(
                 label='motion',

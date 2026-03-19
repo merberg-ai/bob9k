@@ -16,6 +16,11 @@ class Detection:
     area: int
     detector: str
 
+    @property
+    def area_ratio_hint(self) -> float:
+        denom = max(1, self.w * self.h)
+        return float(self.area) / float(denom)
+
 
 @dataclass
 class TrackedTarget:
@@ -24,3 +29,7 @@ class TrackedTarget:
     error_y: float = 0.0
     acquired: bool = False
     lost_age_s: float = 0.0
+    locked: bool = False
+    lock_frames: int = 0
+    switch_reason: str | None = None
+    candidate_count: int = 0

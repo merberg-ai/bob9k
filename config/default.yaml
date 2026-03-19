@@ -115,8 +115,6 @@ motors:
   command_timeout_s: 0.75
   left_invert: false
   right_invert: true
-
-
 camera:
   width: 640
   height: 480
@@ -130,8 +128,6 @@ camera:
   exposure_compensation: 0.0
   manual_red_gain: null
   manual_blue_gain: null
-
-
 tracking:
   enabled: false
   mode: camera_track
@@ -146,3 +142,16 @@ tracking:
   lost_timeout_s: 2.0
   target_distance_cm: 30.0
   distance_tolerance_cm: 5.0
+  confidence_threshold: 0.45
+  min_detection_area: 0.01
+  min_target_area: 0.02
+  edge_reject_margin_px: 12
+  detect_only_mode: false
+  diagnostics_overlay: true
+  lock_hysteresis: true
+  lock_iou_threshold: 0.35
+  switch_margin: 0.15
+  min_lock_frames: 3
+  process_every_n_frames: 1
+  max_servo_step: 4
+  servo_rate_limit_hz: 15
