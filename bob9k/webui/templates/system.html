@@ -12,6 +12,20 @@
     </div>
   </section>
 
+  <section class='card'>
+    <div class="card-header">Application Version</div>
+    <div class="status-grid">
+      <div><span>Version</span><strong id='ver-string' style="font-family:monospace; color:var(--accent);">--</strong></div>
+      <div><span>App Tag</span><strong id='ver-app'>--</strong></div>
+      <div><span>Git Branch</span><strong id='ver-branch' style="font-family:monospace;">--</strong></div>
+      <div><span>Git Commit</span><strong id='ver-commit' style="font-family:monospace;">--</strong></div>
+      <div><span>Git Tag</span><strong id='ver-tag' style="font-family:monospace;">--</strong></div>
+      <div><span>Commit Date</span><strong id='ver-date'>--</strong></div>
+      <div><span>Repo State</span><strong id='ver-dirty'>--</strong></div>
+    </div>
+    <p id='ver-message' class='muted' style="margin:8px 0 0; font-size:0.82rem; font-family:monospace; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; display:none;"></p>
+  </section>
+
   <section class='card border-danger'>
     <div class="card-header" style="color:#ff6688;">System Operations</div>
     <p class="muted">Warning: Rebooting the system will momentarily cut the connection. Shutting down the system will permanently cut the connection until you manually power cycle the rover hardware.</p>

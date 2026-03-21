@@ -49,6 +49,16 @@ class TrackingService:
         'idle_sleep_s': 0.02,
         'stats_log_interval_s': 10.0,
         'overlay_enabled': True,
+        'show_confidence_bar': True,
+        # --- object follow settings ---
+        'follow_target_distance_cm': 60,
+        'follow_distance_tolerance_cm': 15,
+        'follow_drive_speed': 30,
+        'follow_steer_gain': 0.4,
+        'follow_use_ultrasonic': False,
+        'follow_stop_distance_cm': 25,
+        'follow_image_size_ratio_target': 0.25,
+        'follow_image_size_tolerance': 0.06,
     }
 
     def __init__(self, runtime, logger):
@@ -89,7 +99,7 @@ class TrackingService:
         cfg.update(source or {})
         cfg['enabled'] = bool(cfg.get('enabled', False))
         cfg['mode'] = str(cfg.get('mode', 'camera_track')).strip().lower()
-        if cfg['mode'] not in {'off', 'camera_track'}:
+        if cfg['mode'] not in {'off', 'camera_track', 'object_follow'}:
             cfg['mode'] = 'camera_track'
         detector = str(cfg.get('detector', 'face')).strip().lower()
         aliases = {'haar_face': 'face', 'haar_body': 'body'}
@@ -103,14 +113,21 @@ class TrackingService:
         for name in (
             'confidence_min', 'pan_gain', 'tilt_gain', 'smoothing_alpha', 'lost_timeout_s',
             'servo_idle_hold_s', 'idle_sleep_s', 'stats_log_interval_s',
+            'follow_steer_gain', 'follow_image_size_ratio_target', 'follow_image_size_tolerance',
         ):
             cfg[name] = float(cfg.get(name, self.DEFAULTS[name]))
         for name in (
             'max_results', 'min_area', 'min_target_area', 'x_deadzone_px', 'y_deadzone_px', 'scan_step',
             'scan_tilt_step', 'process_every_n_frames', 'box_padding_px', 'yolo_imgsz', 'jpeg_every_n_frames',
+            'follow_target_distance_cm', 'follow_distance_tolerance_cm', 'follow_drive_speed',
+            'follow_stop_distance_cm',
         ):
             cfg[name] = int(cfg.get(name, self.DEFAULTS[name]))
-        for name in ('scan_when_lost', 'show_labels', 'show_crosshair', 'show_metrics_overlay', 'invert_error_x', 'invert_error_y', 'enable_yolo', 'overlay_enabled'):
+        for name in (
+            'scan_when_lost', 'show_labels', 'show_crosshair', 'show_metrics_overlay',
+            'invert_error_x', 'invert_error_y', 'enable_yolo', 'overlay_enabled',
+            'show_confidence_bar', 'follow_use_ultrasonic',
+        ):
             cfg[name] = bool(cfg.get(name, self.DEFAULTS[name]))
         cfg['confidence_min'] = max(0.0, min(1.0, cfg['confidence_min']))
         cfg['smoothing_alpha'] = max(0.0, min(1.0, cfg['smoothing_alpha']))
@@ -120,6 +137,10 @@ class TrackingService:
         cfg['yolo_imgsz'] = max(160, int(cfg['yolo_imgsz']))
         cfg['idle_sleep_s'] = max(0.005, float(cfg['idle_sleep_s']))
         cfg['stats_log_interval_s'] = max(3.0, float(cfg['stats_log_interval_s']))
+        cfg['follow_drive_speed'] = max(0, min(100, cfg['follow_drive_speed']))
+        cfg['follow_steer_gain'] = max(0.0, min(1.0, cfg['follow_steer_gain']))
+        cfg['follow_target_distance_cm'] = max(5, cfg['follow_target_distance_cm'])
+        cfg['follow_stop_distance_cm'] = max(5, cfg['follow_stop_distance_cm'])
         return cfg
 
     def _sync_state_basics(self):
@@ -224,10 +245,17 @@ class TrackingService:
         self.runtime.state.tracking_target_confidence = None
         self.runtime.state.tracking_scan_active = False
         self.runtime.state.tracking_disable_reason = reason
+        self.runtime.state.tracking_follow_state = 'stopped'
         motors = getattr(self.runtime.registry, 'motors', None)
         if motors and not getattr(motors, 'motion_locked', False):
             try:
                 motors.stop()
+            except Exception:
+                pass
+        steering = getattr(self.runtime.registry, 'steering', None)
+        if steering:
+            try:
+                steering.center()
             except Exception:
                 pass
 
@@ -260,31 +288,78 @@ class TrackingService:
     def _draw_overlay(self, frame, detections, target):
         import cv2
         h, w = frame.shape[:2]
-        if self._config.get('show_crosshair', True):
-            cx, cy = w // 2, h // 2
-            cv2.line(frame, (cx - 12, cy), (cx + 12, cy), (255, 255, 255), 1)
-            cv2.line(frame, (cx, cy - 12), (cx, cy + 12), (255, 255, 255), 1)
         pad = int(self._config.get('box_padding_px', 0))
+        show_labels = self._config.get('show_labels', True)
+        show_conf_bar = self._config.get('show_confidence_bar', True)
+
         for det in detections:
+            is_target = (
+                target and
+                det.x == target.x and det.y == target.y and
+                det.w == target.w and det.h == target.h
+            )
             x1 = max(0, det.x - pad)
             y1 = max(0, det.y - pad)
             x2 = min(w - 1, det.x + det.w + pad)
             y2 = min(h - 1, det.y + det.h + pad)
-            color = (140, 140, 140)
-            thickness = 1
-            if target and det.x == target.x and det.y == target.y and det.w == target.w and det.h == target.h:
+
+            if is_target:
                 color = (0, 255, 204)
                 thickness = 2
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
-            if self._config.get('show_labels', True):
+                # Corner-cross style markers instead of plain rectangle
+                cs = min(16, (x2 - x1) // 4, (y2 - y1) // 4)  # corner size
+                cv2.line(frame, (x1, y1), (x1 + cs, y1), color, thickness)
+                cv2.line(frame, (x1, y1), (x1, y1 + cs), color, thickness)
+                cv2.line(frame, (x2, y1), (x2 - cs, y1), color, thickness)
+                cv2.line(frame, (x2, y1), (x2, y1 + cs), color, thickness)
+                cv2.line(frame, (x1, y2), (x1 + cs, y2), color, thickness)
+                cv2.line(frame, (x1, y2), (x1, y2 - cs), color, thickness)
+                cv2.line(frame, (x2, y2), (x2 - cs, y2), color, thickness)
+                cv2.line(frame, (x2, y2), (x2, y2 - cs), color, thickness)
+                # Thin full box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (*color[:2], 80), 1)
+            else:
+                color = (120, 120, 120)
+                thickness = 1
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+
+            if show_labels:
                 label = f"{det.label} {det.confidence:.2f}" if det.confidence < 0.999 else det.label
-                cv2.putText(frame, label, (x1, max(12, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+                label_y = max(14, y1 - 6)
+                cv2.putText(frame, label, (x1 + 2, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.46, color, 1, cv2.LINE_AA)
+
+            if show_conf_bar and is_target:
+                bar_w = x2 - x1
+                filled = int(bar_w * max(0.0, min(1.0, float(det.confidence))))
+                bar_y = y2 + 3
+                if bar_y + 4 < h:
+                    cv2.rectangle(frame, (x1, bar_y), (x2, bar_y + 4), (60, 60, 60), -1)
+                    cv2.rectangle(frame, (x1, bar_y), (x1 + filled, bar_y + 4), (0, 255, 204), -1)
+
+        if self._config.get('show_crosshair', True):
+            cx, cy = w // 2, h // 2
+            cv2.line(frame, (cx - 14, cy), (cx + 14, cy), (255, 255, 255), 1)
+            cv2.line(frame, (cx, cy - 14), (cx, cy + 14), (255, 255, 255), 1)
+
         if self._config.get('show_metrics_overlay', True):
             state = self.runtime.state
-            line1 = f"detector={state.tracking_detector} tracking={'on' if state.tracking_enabled else 'off'} target={'yes' if state.tracking_target_acquired else 'no'}"
-            line2 = f"fps={self._fps_actual:.1f} pan={state.pan_angle} tilt={state.tilt_angle} detections={len(detections)} clients={self._mjpeg_clients}"
-            cv2.putText(frame, line1, (8, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(frame, line2, (8, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            mode_tag = state.tracking_mode or 'camera_track'
+            line1 = (
+                f"det={state.tracking_detector} mode={mode_tag} "
+                f"track={'on' if state.tracking_enabled else 'off'} "
+                f"target={'yes' if state.tracking_target_acquired else 'no'}"
+            )
+            follow_str = ''
+            if mode_tag == 'object_follow':
+                dist = state.tracking_follow_distance_cm
+                dist_s = f'{dist:.0f}cm' if dist is not None else '?cm'
+                follow_str = f' follow={state.tracking_follow_state} ultra={dist_s}'
+            line2 = (
+                f"fps={self._fps_actual:.1f} pan={state.pan_angle} tilt={state.tilt_angle} "
+                f"det={len(detections)} clients={self._mjpeg_clients}{follow_str}"
+            )
+            cv2.putText(frame, line1, (8, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(frame, line2, (8, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
         return frame
 
     def _update_fps(self):
@@ -316,6 +391,114 @@ class TrackingService:
         self.runtime.state.tilt_angle = getattr(servo, 'tilt_angle', self.runtime.state.tilt_angle)
         self.runtime.state.tracking_scan_active = False
         self._last_move_ts = time.time()
+
+    def _read_ultrasonic(self) -> float | None:
+        """Return distance in cm from the ultrasonic sensor, or None."""
+        sensor = getattr(self.runtime.registry, 'ultrasonic', None)
+        if sensor is None:
+            return None
+        try:
+            return sensor.read_cm()
+        except Exception:
+            return None
+
+    def _follow_target(self, frame, target):
+        """Drive motors and steer to follow the target object at a set distance.
+
+        The camera servo still tracks the target via _move_to_target; this
+        method additionally actuates drive motors and steering.
+        """
+        cfg = self._config
+        motors = getattr(self.runtime.registry, 'motors', None)
+        steering = getattr(self.runtime.registry, 'steering', None)
+        if target is None:
+            if motors:
+                try:
+                    motors.stop()
+                except Exception:
+                    pass
+            if steering:
+                try:
+                    steering.center()
+                except Exception:
+                    pass
+            self.runtime.state.tracking_follow_state = 'stopped'
+            return
+
+        frame_h, frame_w = frame.shape[:2]
+
+        # --- Ultrasonic hard-stop check ---
+        use_sonic = bool(cfg.get('follow_use_ultrasonic', False))
+        sonic_dist = None
+        if use_sonic:
+            sonic_dist = self._read_ultrasonic()
+            self.runtime.state.tracking_follow_distance_cm = sonic_dist
+
+        stop_dist = float(cfg.get('follow_stop_distance_cm', 25))
+        if use_sonic and sonic_dist is not None and sonic_dist <= stop_dist:
+            if motors:
+                try:
+                    motors.stop()
+                except Exception:
+                    pass
+            self.runtime.state.tracking_follow_state = 'stopped_obstacle'
+            # Still allow servo to track, and steer
+            self._move_to_target(frame, target)
+            return
+
+        # --- Drive direction based on distance estimate ---
+        speed = max(0, min(100, int(cfg.get('follow_drive_speed', 30))))
+        drive_state = 'stopped'
+        if motors and not getattr(motors, 'motion_locked', False) and not getattr(motors, 'estop_latched', False):
+            if use_sonic and sonic_dist is not None:
+                # Use absolute distance from ultrasonic
+                target_dist = float(cfg.get('follow_target_distance_cm', 60))
+                tolerance = float(cfg.get('follow_distance_tolerance_cm', 15))
+                if sonic_dist > target_dist + tolerance:
+                    motors.forward(speed)
+                    drive_state = 'forward'
+                elif sonic_dist < target_dist - tolerance:
+                    motors.backward(speed)
+                    drive_state = 'backward'
+                else:
+                    motors.stop()
+                    drive_state = 'stopped'
+            else:
+                # Fallback: use apparent image size ratio to estimate distance
+                target_area_ratio = (target.w * target.h) / max(1, frame_w * frame_h)
+                ratio_target = float(cfg.get('follow_image_size_ratio_target', 0.25))
+                ratio_tol = float(cfg.get('follow_image_size_tolerance', 0.06))
+                if target_area_ratio < ratio_target - ratio_tol:
+                    motors.forward(speed)
+                    drive_state = 'forward'
+                elif target_area_ratio > ratio_target + ratio_tol:
+                    motors.backward(speed)
+                    drive_state = 'backward'
+                else:
+                    motors.stop()
+                    drive_state = 'stopped'
+
+        # --- Steering: proportional to horizontal offset ---
+        if steering:
+            err_x = float(target.center_x - (frame_w / 2.0))
+            steer_gain = float(cfg.get('follow_steer_gain', 0.4))
+            center = getattr(steering, 'center_angle', 90)
+            min_a = getattr(steering, 'min_angle', 45)
+            max_a = getattr(steering, 'max_angle', 135)
+            # Normalise error to [-1, 1] based on half frame width
+            norm_err = err_x / max(1.0, frame_w / 2.0)
+            steer_range = (max_a - center)
+            target_angle = int(center + norm_err * steer_range * steer_gain)
+            target_angle = max(min_a, min(max_a, target_angle))
+            try:
+                steering.set_angle(target_angle)
+                self.runtime.state.steering_angle = steering.angle
+            except Exception:
+                pass
+
+        self.runtime.state.tracking_follow_state = drive_state
+        # Camera servo still tracks
+        self._move_to_target(frame, target)
 
     def _scan_for_target(self):
         servo = getattr(self.runtime.registry, 'camera_servo', None)
@@ -361,7 +544,7 @@ class TrackingService:
             return
         self._last_stats_log_ts = now
         self.logger.info(
-            'Tracking stats: fps=%.2f rss_mb=%s detector=%s status=%s detections=%s clients=%s tracking=%s',
+            'Tracking stats: fps=%.2f rss_mb=%s detector=%s status=%s detections=%s clients=%s tracking=%s mode=%s',
             self._fps_actual,
             self._current_rss_mb(),
             self.runtime.state.tracking_detector,
@@ -369,6 +552,7 @@ class TrackingService:
             self.runtime.state.tracking_last_detection_count,
             self._mjpeg_clients,
             self.runtime.state.tracking_enabled,
+            self.runtime.state.tracking_mode,
         )
 
     def _should_encode_jpeg(self, frame_counter: int) -> bool:
@@ -449,18 +633,27 @@ class TrackingService:
                 if self.runtime.state.tracking_enabled:
                     self.disable(reason='motion_blocked')
 
-            if self.runtime.state.tracking_enabled and self.runtime.state.tracking_mode != 'off':
-                if motors and getattr(motors, 'state', 'stopped') != 'stopped':
-                    try:
-                        motors.stop()
-                    except Exception:
-                        pass
-                if target:
-                    self._move_to_target(frame, target)
+            mode = self.runtime.state.tracking_mode
+            if self.runtime.state.tracking_enabled and mode != 'off':
+                if mode == 'object_follow':
+                    # Object follow: servo tracking + motor drive + steering
+                    self._follow_target(frame, target)
+                    if not target:
+                        self._scan_for_target()
                 else:
-                    self._scan_for_target()
+                    # camera_track mode: servo only; stop motors if moving
+                    if motors and getattr(motors, 'state', 'stopped') != 'stopped':
+                        try:
+                            motors.stop()
+                        except Exception:
+                            pass
+                    if target:
+                        self._move_to_target(frame, target)
+                    else:
+                        self._scan_for_target()
             else:
                 self.runtime.state.tracking_scan_active = False
+                self.runtime.state.tracking_follow_state = 'stopped'
 
             self.runtime.state.tracking_frame_size = (int(frame.shape[1]), int(frame.shape[0]))
             self._update_fps()
@@ -476,6 +669,8 @@ class TrackingService:
                 'jpeg_every_n_frames': int(cfg.get('jpeg_every_n_frames', 2)),
                 'process_every_n_frames': int(cfg.get('process_every_n_frames', 3)),
                 'yolo_imgsz': int(cfg.get('yolo_imgsz', 320)),
+                'follow_state': self.runtime.state.tracking_follow_state,
+                'follow_distance_cm': self.runtime.state.tracking_follow_distance_cm,
             }
             if bool(cfg.get('overlay_enabled', True)) and self._should_encode_jpeg(frame_counter):
                 draw_frame = self._draw_overlay(frame.copy(), detections or [], target)

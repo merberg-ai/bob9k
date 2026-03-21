@@ -37,3 +37,5 @@ class RuntimeState:
     tracking_fps_actual: float = 0.0
     tracking_mjpeg_clients: int = 0
     tracking_last_error: str | None = None
+    tracking_follow_distance_cm: float | None = None
+    tracking_follow_state: str = 'stopped'

@@ -10,8 +10,7 @@ function trackingLog(msg) {
   const el = trackingConsoleEl();
   if (!el) return;
   const stamp = new Date().toLocaleTimeString();
-  el.textContent = `[${stamp}] ${msg}
-` + el.textContent;
+  el.textContent = `[${stamp}] ${msg}\n` + el.textContent;
 }
 
 async function trackingFetch(url, opts={}) {
@@ -27,17 +26,35 @@ function trackingSetValue(id, value) {
   el.value = value ?? '';
 }
 
+function trackingShowFollowSection(show) {
+  const el = $t('follow-settings-section');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
 function trackingFillConfig(payload) {
   trackingCurrentConfig = payload.config || {};
   const cfg = payload.config || {};
   [
     'detector','target_label','yolo_model','yolo_imgsz','confidence_min','max_results','min_area',
     'min_target_area','pan_gain','tilt_gain','x_deadzone_px','y_deadzone_px','smoothing_alpha',
-    'lost_timeout_s','scan_step','scan_tilt_step','process_every_n_frames','box_padding_px','preferred_target'
+    'lost_timeout_s','scan_step','scan_tilt_step','process_every_n_frames','box_padding_px','preferred_target',
+    'follow_target_distance_cm','follow_distance_tolerance_cm','follow_drive_speed','follow_steer_gain',
+    'follow_stop_distance_cm','follow_image_size_ratio_target','follow_image_size_tolerance',
   ].forEach((k) => trackingSetValue(k, cfg[k]));
   trackingSetValue('enable_yolo', String(!!cfg.enable_yolo));
   trackingSetValue('yolo_classes', Array.isArray(cfg.yolo_classes) ? cfg.yolo_classes.join(',') : (cfg.yolo_classes || ''));
-  ['scan_when_lost','show_labels','show_crosshair','show_metrics_overlay','invert_error_x','invert_error_y'].forEach((k) => trackingSetValue(k, String(!!cfg[k])));
+  [
+    'scan_when_lost','show_labels','show_crosshair','show_metrics_overlay',
+    'invert_error_x','invert_error_y','show_confidence_bar',
+  ].forEach((k) => trackingSetValue(k, String(!!cfg[k])));
+  trackingSetValue('follow_use_ultrasonic', String(!!cfg.follow_use_ultrasonic));
+
+  // Mode selector
+  const modeEl = $t('tracking_mode');
+  if (modeEl) {
+    modeEl.value = cfg.mode || 'camera_track';
+    trackingShowFollowSection(modeEl.value === 'object_follow');
+  }
 
   const servo = payload.servo || {};
   if (servo.pan) {
@@ -57,8 +74,10 @@ function trackingFillConfig(payload) {
 function trackingReadConfigForm() {
   const detector = $t('detector').value;
   const enable_yolo = detector === 'yolo' ? true : ($t('enable_yolo').value === 'true');
+  const mode = ($t('tracking_mode') || {}).value || 'camera_track';
   return {
     detector,
+    mode,
     preferred_target: $t('preferred_target').value,
     target_label: $t('target_label').value.trim(),
     yolo_model: $t('yolo_model').value.trim() || 'yolov8n.pt',
@@ -81,11 +100,21 @@ function trackingReadConfigForm() {
     show_labels: $t('show_labels').value === 'true',
     show_crosshair: $t('show_crosshair').value === 'true',
     show_metrics_overlay: $t('show_metrics_overlay').value === 'true',
+    show_confidence_bar: ($t('show_confidence_bar') || {}).value === 'true',
     invert_error_x: $t('invert_error_x').value === 'true',
     invert_error_y: $t('invert_error_y').value === 'true',
     enable_yolo,
     yolo_imgsz: Number($t('yolo_imgsz').value || 320),
     overlay_enabled: true,
+    // follow settings
+    follow_target_distance_cm: Number(($t('follow_target_distance_cm') || {}).value || 60),
+    follow_distance_tolerance_cm: Number(($t('follow_distance_tolerance_cm') || {}).value || 15),
+    follow_drive_speed: Number(($t('follow_drive_speed') || {}).value || 30),
+    follow_steer_gain: Number(($t('follow_steer_gain') || {}).value || 0.4),
+    follow_use_ultrasonic: (($t('follow_use_ultrasonic') || {}).value === 'true'),
+    follow_stop_distance_cm: Number(($t('follow_stop_distance_cm') || {}).value || 25),
+    follow_image_size_ratio_target: Number(($t('follow_image_size_ratio_target') || {}).value || 0.25),
+    follow_image_size_tolerance: Number(($t('follow_image_size_tolerance') || {}).value || 0.06),
   };
 }
 
@@ -97,6 +126,28 @@ function trackingUpdateServoReadout(state) {
   $t('servo-stat').textContent = `P ${state.pan_angle ?? '--'} / T ${state.tilt_angle ?? '--'}`;
 }
 
+function trackingUpdateFollowUI(s) {
+  const isFollow = s.mode === 'object_follow';
+  const followStatEl = $t('follow-stat');
+  const followDistRow = $t('follow-distance-row');
+  const followDriveRow = $t('follow-drive-row');
+  if (followStatEl) {
+    followStatEl.style.display = isFollow ? '' : 'none';
+    if (isFollow) {
+      const fs = s.follow_state || 'stopped';
+      const dist = (s.follow_distance_cm != null) ? `${s.follow_distance_cm.toFixed(0)}cm` : '--';
+      followStatEl.textContent = `follow: ${fs} | ultra: ${dist}`;
+    }
+  }
+  if (followDistRow) followDistRow.style.display = isFollow ? '' : 'none';
+  if (followDriveRow) followDriveRow.style.display = isFollow ? '' : 'none';
+  if ($t('follow-distance-stat')) {
+    const dist = s.follow_distance_cm != null ? `${s.follow_distance_cm.toFixed(0)} cm` : '--';
+    $t('follow-distance-stat').textContent = dist;
+  }
+  if ($t('follow-drive-stat')) $t('follow-drive-stat').textContent = s.follow_state || '--';
+}
+
 async function trackingRefresh() {
   const now = Date.now();
   if (now - trackingLastRefresh < 250) return;
@@ -104,7 +155,10 @@ async function trackingRefresh() {
   const resp = await trackingFetch('/api/tracking/state');
   const s = resp.state || {};
   trackingCurrentState = s;
-  $t('status-pill-local').textContent = s.tracking_enabled ? (s.target_acquired ? 'Tracking' : (s.scan_active ? 'Scanning' : 'Armed')) : 'Idle';
+  const isFollow = s.mode === 'object_follow';
+  $t('status-pill-local').textContent = s.tracking_enabled
+    ? (s.target_acquired ? (isFollow ? 'Following' : 'Tracking') : (s.scan_active ? 'Scanning' : 'Armed'))
+    : 'Idle';
   $t('detector-name').textContent = `detector: ${s.detector || '--'}`;
   $t('detect-count').textContent = `detections: ${s.last_detection_count ?? '--'}`;
   $t('fps-stat').textContent = `fps: ${s.metrics?.fps_actual ?? '--'}`;
@@ -125,6 +179,7 @@ async function trackingRefresh() {
     if (!s.yolo_available) yoloOpt.title = 'ultralytics not installed or unavailable';
   }
   trackingUpdateServoReadout(s);
+  trackingUpdateFollowUI(s);
   $t('detector-status').title = s.detector_status || '';
   if (document.activeElement !== $t('manual_pan')) $t('manual_pan').value = s.pan_angle ?? $t('manual_pan').value;
   if (document.activeElement !== $t('manual_tilt')) $t('manual_tilt').value = s.tilt_angle ?? $t('manual_tilt').value;
@@ -155,10 +210,51 @@ async function trackingBoot() {
   setInterval(() => trackingRefresh().catch(err => trackingLog(`refresh failed: ${err.message || err}`)), 800);
 }
 
+// ---- Tooltip system ----
+function initHelpTooltips() {
+  const tooltip = document.getElementById('help-tooltip');
+  if (!tooltip) return;
+  let hideTimer = null;
+  document.querySelectorAll('.help-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearTimeout(hideTimer);
+      const text = btn.dataset.help || '';
+      tooltip.textContent = text;
+      tooltip.style.display = 'block';
+      const rect = btn.getBoundingClientRect();
+      let left = rect.left + window.scrollX;
+      let top = rect.bottom + window.scrollY + 6;
+      // Prevent going off-screen right
+      if (left + 290 > window.innerWidth) left = window.innerWidth - 296;
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+      hideTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 4000);
+    });
+  });
+  document.addEventListener('click', () => {
+    clearTimeout(hideTimer);
+    tooltip.style.display = 'none';
+  });
+  document.addEventListener('scroll', () => {
+    clearTimeout(hideTimer);
+    tooltip.style.display = 'none';
+  }, {passive: true});
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   if (!trackingPage()) return;
 
+  initHelpTooltips();
   trackingBoot().catch(err => trackingLog(`boot failed: ${err.message || err}`));
+
+  // Mode selector show/hide follow section
+  const modeEl = $t('tracking_mode');
+  if (modeEl) {
+    modeEl.addEventListener('change', () => {
+      trackingShowFollowSection(modeEl.value === 'object_follow');
+    });
+  }
 
   $t('toggle-tracking').addEventListener('click', async () => {
     try {
@@ -177,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const payload = {tracking: trackingReadConfigForm()};
       await trackingFetch('/api/tracking/config', {method:'POST', body: JSON.stringify(payload)});
-      trackingLog(`config saved for detector=${payload.tracking.detector}`);
+      trackingLog(`config saved: detector=${payload.tracking.detector} mode=${payload.tracking.mode}`);
       if (window.setActionMessage) setActionMessage('Tracking config saved.', 'success');
       trackingRefresh();
     } catch (err) {

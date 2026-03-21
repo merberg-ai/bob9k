@@ -16,7 +16,10 @@
 
   <!-- Slim Top Bar -->
   <header class='app-header'>
-    <span class='header-title'>{{ page | upper if page else 'bob9k' }}</span>
+    <div style='display:flex; align-items:baseline; gap:8px;'>
+      <span class='header-title'>{{ page | upper if page else 'bob9k' }}</span>
+      <span id='app-version-tag' style='font-size:0.65rem; opacity:0.45; font-family:monospace; letter-spacing:0.02em; display:none;'></span>
+    </div>
     <div class='header-actions'>
       <div class='header-batt-mini'>
         <div class='batt-bar-mini'><div id='batt-mini-fill' class='batt-bar-mini-fill'></div></div>
@@ -121,6 +124,7 @@
       // Sync mini battery bar from telemetry — lightweight, non-blocking
       const fill = document.getElementById('batt-mini-fill');
       const label = document.getElementById('batt-mini-label');
+      let versionLoaded = false;
       async function syncBatt() {
         try {
           const d = await fetch('/api/status').then(r => r.json());
@@ -139,7 +143,21 @@
         } catch(e) {}
         setTimeout(syncBatt, 2000);
       }
+      // Fetch version tag once on page load
+      async function loadVersion() {
+        if (versionLoaded) return;
+        try {
+          const d = await fetch('/api/system').then(r => r.json());
+          const vtag = document.getElementById('app-version-tag');
+          if (vtag && d.version && d.version.version_string) {
+            vtag.textContent = d.version.version_string;
+            vtag.style.display = '';
+            versionLoaded = true;
+          }
+        } catch(e) {}
+      }
       syncBatt();
+      loadVersion();
     })();
   </script>
 </body>

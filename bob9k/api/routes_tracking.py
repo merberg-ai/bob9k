@@ -53,6 +53,9 @@ def _state_payload(runtime):
         'scan_active': state.tracking_scan_active,
         'metrics': state.tracking_metrics,
         'mjpeg_clients': state.tracking_mjpeg_clients,
+        'mode': state.tracking_mode,
+        'follow_distance_cm': state.tracking_follow_distance_cm,
+        'follow_state': state.tracking_follow_state,
     }
 
 
