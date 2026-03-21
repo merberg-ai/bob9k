@@ -46,6 +46,7 @@ function trackingFillConfig(payload) {
   [
     'scan_when_lost','show_labels','show_crosshair','show_metrics_overlay',
     'invert_error_x','invert_error_y','show_confidence_bar',
+    'invert_pan_error',
   ].forEach((k) => trackingSetValue(k, String(!!cfg[k])));
   trackingSetValue('follow_use_ultrasonic', String(!!cfg.follow_use_ultrasonic));
 
@@ -101,6 +102,7 @@ function trackingReadConfigForm() {
     show_crosshair: $t('show_crosshair').value === 'true',
     show_metrics_overlay: $t('show_metrics_overlay').value === 'true',
     show_confidence_bar: ($t('show_confidence_bar') || {}).value === 'true',
+    invert_pan_error: ($t('invert_pan_error') || {}).value === 'true',
     invert_error_x: $t('invert_error_x').value === 'true',
     invert_error_y: $t('invert_error_y').value === 'true',
     enable_yolo,

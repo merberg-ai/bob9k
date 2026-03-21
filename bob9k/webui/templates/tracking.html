@@ -126,6 +126,9 @@
     <div><span>Hard-Stop Distance (cm) <button class='help-btn' data-help='If the ultrasonic sensor reads a distance ≤ this value, motors are immediately stopped regardless of other settings. This prevents collisions. Only active when Use Ultrasonic is enabled.'>?</button></span>
       <input id='follow_stop_distance_cm' type='number' min='5' max='200' step='1'>
     </div>
+    <div><span>Invert Steering <button class='help-btn' data-help='Invert the left/right steering direction when following an object. Use this if the robot steers the wrong way when the camera pans.'>?</button></span>
+      <select id='invert_pan_error'><option value='false'>No</option><option value='true'>Yes</option></select>
+    </div>
   </div>
 </section>
 

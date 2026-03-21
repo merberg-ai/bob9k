@@ -59,6 +59,7 @@ class TrackingService:
         'follow_stop_distance_cm': 25,
         'follow_image_size_ratio_target': 0.25,
         'follow_image_size_tolerance': 0.06,
+        'invert_pan_error': False,
     }
 
     def __init__(self, runtime, logger):
@@ -140,7 +141,7 @@ class TrackingService:
         for name in (
             'scan_when_lost', 'show_labels', 'show_crosshair', 'show_metrics_overlay',
             'invert_error_x', 'invert_error_y', 'enable_yolo', 'overlay_enabled',
-            'show_confidence_bar', 'follow_use_ultrasonic',
+            'show_confidence_bar', 'follow_use_ultrasonic', 'invert_pan_error',
         ):
             cfg[name] = bool(cfg.get(name, self.DEFAULTS[name]))
         cfg['confidence_min'] = max(0.0, min(1.0, cfg['confidence_min']))
@@ -509,6 +510,8 @@ class TrackingService:
                 
                 # 1. Error from the camera's physical pan angle
                 pan_err_deg = current_pan - pan_center
+                if cfg.get('invert_pan_error', False):
+                    pan_err_deg = -pan_err_deg
                 
                 # 2. Residual error from the image frame
                 # Assume a ~60 degree Horizontal Field of View for the PiCamera.
