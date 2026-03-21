@@ -59,6 +59,16 @@ class TrackingService:
         'follow_stop_distance_cm': 25,
         'follow_image_size_ratio_target': 0.25,
         'follow_image_size_tolerance': 0.06,
+        'follow_reverse_enabled': True,
+        'follow_target_lock_iou_min': 0.12,
+        'follow_target_lock_center_px': 160,
+        'follow_target_switch_margin': 1.2,
+        'follow_distance_hysteresis_cm': 6,
+        'follow_image_size_hysteresis': 0.025,
+        'follow_distance_smoothing_alpha': 0.35,
+        'follow_steer_smoothing_alpha': 0.25,
+        'follow_min_drive_update_s': 0.2,
+        'follow_steer_max_step_deg': 6,
         'invert_pan_error': False,
     }
 
@@ -93,6 +103,10 @@ class TrackingService:
         self._latest_detections = []
         self._latest_target = None
         self._fps_window_ts = time.time()
+        self._follow_distance_ema = None
+        self._follow_area_ratio_ema = None
+        self._follow_drive_state = 'stopped'
+        self._follow_drive_change_ts = 0.0
         self._fps_counter = 0
         self._fps_actual = 0.0
         self._process = psutil.Process() if psutil else None
@@ -130,19 +144,23 @@ class TrackingService:
             'confidence_min', 'pan_gain', 'tilt_gain', 'smoothing_alpha', 'lost_timeout_s',
             'servo_idle_hold_s', 'idle_sleep_s', 'stats_log_interval_s',
             'follow_steer_gain', 'follow_image_size_ratio_target', 'follow_image_size_tolerance',
+            'follow_target_lock_iou_min', 'follow_target_switch_margin',
+            'follow_image_size_hysteresis', 'follow_distance_smoothing_alpha',
+            'follow_steer_smoothing_alpha', 'follow_min_drive_update_s',
         ):
             cfg[name] = float(cfg.get(name, self.DEFAULTS[name]))
         for name in (
             'max_results', 'min_area', 'min_target_area', 'x_deadzone_px', 'y_deadzone_px', 'scan_step',
             'scan_tilt_step', 'process_every_n_frames', 'box_padding_px', 'yolo_imgsz', 'jpeg_every_n_frames',
             'follow_target_distance_cm', 'follow_distance_tolerance_cm', 'follow_drive_speed',
-            'follow_stop_distance_cm',
+            'follow_stop_distance_cm', 'follow_target_lock_center_px', 'follow_distance_hysteresis_cm',
+            'follow_steer_max_step_deg',
         ):
             cfg[name] = int(cfg.get(name, self.DEFAULTS[name]))
         for name in (
             'scan_when_lost', 'show_labels', 'show_crosshair', 'show_metrics_overlay',
             'invert_error_x', 'invert_error_y', 'enable_yolo', 'overlay_enabled',
-            'show_confidence_bar', 'follow_use_ultrasonic', 'invert_pan_error',
+            'show_confidence_bar', 'follow_use_ultrasonic', 'follow_reverse_enabled', 'invert_pan_error',
         ):
             cfg[name] = bool(cfg.get(name, self.DEFAULTS[name]))
         cfg['confidence_min'] = max(0.0, min(1.0, cfg['confidence_min']))
@@ -157,6 +175,15 @@ class TrackingService:
         cfg['follow_steer_gain'] = max(0.0, min(1.0, cfg['follow_steer_gain']))
         cfg['follow_target_distance_cm'] = max(5, cfg['follow_target_distance_cm'])
         cfg['follow_stop_distance_cm'] = max(5, cfg['follow_stop_distance_cm'])
+        cfg['follow_target_lock_iou_min'] = max(0.0, min(1.0, cfg['follow_target_lock_iou_min']))
+        cfg['follow_target_switch_margin'] = max(1.0, cfg['follow_target_switch_margin'])
+        cfg['follow_target_lock_center_px'] = max(10, cfg['follow_target_lock_center_px'])
+        cfg['follow_distance_hysteresis_cm'] = max(0, cfg['follow_distance_hysteresis_cm'])
+        cfg['follow_image_size_hysteresis'] = max(0.0, cfg['follow_image_size_hysteresis'])
+        cfg['follow_distance_smoothing_alpha'] = max(0.0, min(1.0, cfg['follow_distance_smoothing_alpha']))
+        cfg['follow_steer_smoothing_alpha'] = max(0.0, min(1.0, cfg['follow_steer_smoothing_alpha']))
+        cfg['follow_min_drive_update_s'] = max(0.0, cfg['follow_min_drive_update_s'])
+        cfg['follow_steer_max_step_deg'] = max(1, cfg['follow_steer_max_step_deg'])
         return cfg
 
     def _sync_state_basics(self):
@@ -262,6 +289,14 @@ class TrackingService:
         self.runtime.state.tracking_scan_active = False
         self.runtime.state.tracking_disable_reason = reason
         self.runtime.state.tracking_follow_state = 'stopped'
+        self.runtime.state.tracking_follow_distance_cm = None
+        self._follow_distance_ema = None
+        self._follow_area_ratio_ema = None
+        self._follow_drive_state = 'stopped'
+        self._follow_drive_change_ts = 0.0
+        self._last_steer_angle = None
+        if hasattr(self._tracker, 'reset'):
+            self._tracker.reset()
         motors = getattr(self.runtime.registry, 'motors', None)
         if motors and not getattr(motors, 'motion_locked', False):
             try:
@@ -418,16 +453,99 @@ class TrackingService:
         except Exception:
             return None
 
-    def _follow_target(self, frame, target):
-        """Drive motors and steer to follow the target object at a set distance.
 
-        The camera servo still tracks the target via _move_to_target; this
-        method additionally actuates drive motors and steering.
-        """
+    def _ema(self, previous, current, alpha: float):
+        if current is None:
+            return previous
+        if previous is None:
+            return float(current)
+        alpha = max(0.0, min(1.0, float(alpha)))
+        return (alpha * float(current)) + ((1.0 - alpha) * float(previous))
+
+    def _follow_desired_state_ultrasonic(self, dist_cm: float, stop_dist: float):
+        cfg = self._config
+        reverse_enabled = bool(cfg.get('follow_reverse_enabled', True))
+        target_dist = float(cfg.get('follow_target_distance_cm', 60))
+        tolerance = float(cfg.get('follow_distance_tolerance_cm', 15))
+        hysteresis = float(cfg.get('follow_distance_hysteresis_cm', 6))
+        prev = self._follow_drive_state
+
+        forward_enter = target_dist + tolerance + hysteresis
+        forward_exit = target_dist + max(0.0, tolerance - hysteresis)
+        backward_enter = max(stop_dist, target_dist - tolerance - hysteresis)
+        backward_exit = max(stop_dist, target_dist - tolerance + hysteresis)
+
+        if prev == 'forward':
+            return 'forward' if dist_cm >= forward_exit else 'stopped'
+        if prev == 'backward':
+            if reverse_enabled and stop_dist < dist_cm <= backward_exit:
+                return 'backward'
+            return 'stopped'
+        if dist_cm >= forward_enter:
+            return 'forward'
+        if reverse_enabled and stop_dist < dist_cm <= backward_enter:
+            return 'backward'
+        return 'stopped'
+
+    def _follow_desired_state_area(self, area_ratio: float):
+        cfg = self._config
+        reverse_enabled = bool(cfg.get('follow_reverse_enabled', True))
+        ratio_target = float(cfg.get('follow_image_size_ratio_target', 0.25))
+        ratio_tol = float(cfg.get('follow_image_size_tolerance', 0.06))
+        hysteresis = float(cfg.get('follow_image_size_hysteresis', 0.025))
+        prev = self._follow_drive_state
+
+        forward_enter = max(0.0, ratio_target - ratio_tol - hysteresis)
+        forward_exit = max(0.0, ratio_target - ratio_tol + hysteresis)
+        backward_enter = ratio_target + ratio_tol + hysteresis
+        backward_exit = ratio_target + ratio_tol - hysteresis
+
+        if prev == 'forward':
+            return 'forward' if area_ratio <= forward_exit else 'stopped'
+        if prev == 'backward':
+            if reverse_enabled and area_ratio >= backward_exit:
+                return 'backward'
+            return 'stopped'
+        if area_ratio <= forward_enter:
+            return 'forward'
+        if reverse_enabled and area_ratio >= backward_enter:
+            return 'backward'
+        return 'stopped'
+
+    def _apply_follow_drive(self, motors, desired_state: str, speed: int):
+        now = time.time()
+        min_update = float(self._config.get('follow_min_drive_update_s', 0.2))
+        current_state = self._follow_drive_state
+
+        if desired_state != current_state and (now - self._follow_drive_change_ts) < min_update:
+            desired_state = current_state
+
+        try:
+            if desired_state == 'forward':
+                motors.forward(speed)
+            elif desired_state == 'backward':
+                motors.backward(speed)
+            else:
+                motors.stop()
+        except Exception:
+            return 'stopped'
+
+        if desired_state != current_state:
+            self._follow_drive_change_ts = now
+        self._follow_drive_state = desired_state
+        return desired_state
+
+    def _follow_target(self, frame, target):
+        """Drive motors and steer to follow the target with less twitch and less target hopping."""
         cfg = self._config
         motors = getattr(self.runtime.registry, 'motors', None)
         steering = getattr(self.runtime.registry, 'steering', None)
+        frame_h, frame_w = frame.shape[:2]
+
         if target is None:
+            self._follow_distance_ema = None
+            self._follow_area_ratio_ema = None
+            self._follow_drive_state = 'stopped'
             if motors:
                 try:
                     motors.stop()
@@ -436,144 +554,114 @@ class TrackingService:
             if steering:
                 try:
                     center_ang = getattr(steering, 'center_angle', 90)
-                    alpha = float(cfg.get('smoothing_alpha', 0.4))
-                    if self._last_steer_angle is not None:
-                        self._last_steer_angle = (alpha * center_ang) + ((1.0 - alpha) * self._last_steer_angle)
-                        curr_angle = int(round(self._last_steer_angle))
-                        if abs(curr_angle - center_ang) <= 1:
-                            curr_angle = center_ang
-                            self._last_steer_angle = None
-                        steering.set_angle(curr_angle)
-                        self.runtime.state.steering_angle = curr_angle
+                    alpha = float(cfg.get('follow_steer_smoothing_alpha', 0.25))
+                    if self._last_steer_angle is None:
+                        self._last_steer_angle = float(center_ang)
                     else:
-                        steering.center()
-                        self.runtime.state.steering_angle = center_ang
+                        self._last_steer_angle = (alpha * float(center_ang)) + ((1.0 - alpha) * float(self._last_steer_angle))
+                    curr_angle = int(round(self._last_steer_angle))
+                    if abs(curr_angle - center_ang) <= 1:
+                        curr_angle = center_ang
+                        self._last_steer_angle = None
+                    steering.set_angle(curr_angle)
+                    self.runtime.state.steering_angle = curr_angle
                 except Exception:
                     pass
             self.runtime.state.tracking_follow_state = 'stopped'
+            self.runtime.state.tracking_follow_distance_cm = None
             return
 
-        frame_h, frame_w = frame.shape[:2]
-
-        # --- Ultrasonic hard-stop check ---
         use_sonic = bool(cfg.get('follow_use_ultrasonic', False))
-        sonic_dist = None
-        if use_sonic:
-            sonic_dist = self._read_ultrasonic()
-            self.runtime.state.tracking_follow_distance_cm = sonic_dist
-
         stop_dist = float(cfg.get('follow_stop_distance_cm', 25))
+        distance_alpha = float(cfg.get('follow_distance_smoothing_alpha', 0.35))
+        speed = max(0, min(100, int(cfg.get('follow_drive_speed', 30))))
+
+        raw_sonic = None
+        sonic_dist = None
+        raw_area_ratio = (target.w * target.h) / max(1, frame_w * frame_h)
+        area_ratio = self._ema(self._follow_area_ratio_ema, raw_area_ratio, distance_alpha)
+        self._follow_area_ratio_ema = area_ratio
+
+        if use_sonic:
+            raw_sonic = self._read_ultrasonic()
+            if raw_sonic is not None and raw_sonic > 0:
+                sonic_dist = self._ema(self._follow_distance_ema, raw_sonic, distance_alpha)
+                self._follow_distance_ema = sonic_dist
+            else:
+                sonic_dist = self._follow_distance_ema
+            self.runtime.state.tracking_follow_distance_cm = sonic_dist
+        else:
+            self.runtime.state.tracking_follow_distance_cm = None
+
         if use_sonic and sonic_dist is not None and sonic_dist <= stop_dist:
             if motors:
                 try:
                     motors.stop()
                 except Exception:
                     pass
+            self._follow_drive_state = 'stopped'
             self.runtime.state.tracking_follow_state = 'stopped_obstacle'
-            # Still allow servo to track, and steer
             self._move_to_target(frame, target)
             return
 
-        # --- Drive direction based on distance estimate ---
-        speed = max(0, min(100, int(cfg.get('follow_drive_speed', 30))))
         drive_state = 'stopped'
         if motors and not getattr(motors, 'motion_locked', False) and not getattr(motors, 'estop_latched', False):
             if use_sonic and sonic_dist is not None:
-                # Use absolute distance from ultrasonic
-                target_dist = float(cfg.get('follow_target_distance_cm', 60))
-                tolerance = float(cfg.get('follow_distance_tolerance_cm', 15))
-                if sonic_dist > target_dist + tolerance:
-                    motors.forward(speed)
-                    drive_state = 'forward'
-                elif sonic_dist < target_dist - tolerance:
-                    motors.backward(speed)
-                    drive_state = 'backward'
-                else:
-                    motors.stop()
-                    drive_state = 'stopped'
+                desired_state = self._follow_desired_state_ultrasonic(float(sonic_dist), stop_dist)
             else:
-                # Fallback: use apparent image size ratio to estimate distance
-                target_area_ratio = (target.w * target.h) / max(1, frame_w * frame_h)
-                ratio_target = float(cfg.get('follow_image_size_ratio_target', 0.25))
-                ratio_tol = float(cfg.get('follow_image_size_tolerance', 0.06))
-                if target_area_ratio < ratio_target - ratio_tol:
-                    motors.forward(speed)
-                    drive_state = 'forward'
-                elif target_area_ratio > ratio_target + ratio_tol:
-                    motors.backward(speed)
-                    drive_state = 'backward'
-                else:
-                    motors.stop()
-                    drive_state = 'stopped'
+                desired_state = self._follow_desired_state_area(float(area_ratio))
+            drive_state = self._apply_follow_drive(motors, desired_state, speed)
+        else:
+            self._follow_drive_state = 'stopped'
 
-        # --- Steering: True Heading Error (Pan Angle + Image Offset) ---
         if steering:
-            servo = getattr(self.runtime.registry, 'camera_servo', None)
-            steer_gain = float(cfg.get('follow_steer_gain', 0.6))
-            center = getattr(steering, 'center_angle', 90)
-            min_a = getattr(steering, 'min_angle', 45)
-            max_a = getattr(steering, 'max_angle', 135)
-            invert = bool(getattr(steering, 'invert', False))
-            
-            err_x = float(target.center_x - (frame_w / 2.0))
-            
-            if servo:
-                current_pan = float(getattr(servo, 'pan_angle', 90))
-                pan_center = float(getattr(servo, 'pan_center', 90))
-                
-                # 1. Error from the camera's physical pan angle
-                pan_err_deg = current_pan - pan_center
-                if cfg.get('invert_pan_error', False):
-                    pan_err_deg = -pan_err_deg
-                
-                # We purely use the camera's smoothed pan angle to drive steering, completely
-                # ignoring the jittery raw image bounding-box offset.
-                total_err_deg = pan_err_deg
-                
-                # Normalise to [-1.0, 1.0] assuming a max reasonable tracking angle of ~50 degrees
-                norm_err = total_err_deg / 50.0
-            else:
-                # Fallback if servo is missing: just use image frame
-                norm_err = err_x / max(1.0, frame_w / 2.0)
-
-            # Apply a deadzone so small offsets don't cause constant jitter
-            deadzone = float(cfg.get('x_deadzone_px', 48))
-            norm_deadzone = deadzone / max(1.0, frame_w / 2.0)
-            if abs(norm_err) < norm_deadzone:
-                norm_err = 0.0
-                
-            # Clamp normalised error to [-1, 1]
-            norm_err = max(-1.0, min(1.0, norm_err))
-            
-            # Flip direction when the steering hardware is inverted
-            if invert:
-                norm_err = -norm_err
-                
-            # Use the correct half-range for each steering direction
-            if norm_err >= 0:
-                steer_range = float(max_a - center)
-            else:
-                steer_range = float(center - min_a)
-                
-            target_angle = center + int(norm_err * steer_range * steer_gain)
-            target_angle = max(min_a, min(max_a, target_angle))
-            
             try:
-                # Apply exponential smoothing to the steering servo
-                alpha = float(cfg.get('smoothing_alpha', 0.4))
+                center = getattr(steering, 'center_angle', 90)
+                min_a = getattr(steering, 'min_angle', 45)
+                max_a = getattr(steering, 'max_angle', 135)
+                invert = bool(getattr(steering, 'invert', False))
+                steer_gain = float(cfg.get('follow_steer_gain', 0.6))
+                steer_alpha = float(cfg.get('follow_steer_smoothing_alpha', 0.25))
+                max_step = int(cfg.get('follow_steer_max_step_deg', 6))
+
+                err_x = float(target.center_x - (frame_w / 2.0))
+                norm_err = err_x / max(1.0, frame_w / 2.0)
+                norm_deadzone = float(cfg.get('x_deadzone_px', 48)) / max(1.0, frame_w / 2.0)
+                if abs(norm_err) < norm_deadzone:
+                    norm_err = 0.0
+                norm_err = max(-1.0, min(1.0, norm_err))
+                if invert:
+                    norm_err = -norm_err
+
+                steer_range = float((max_a - center) if norm_err >= 0 else (center - min_a))
+                target_angle = float(center + (norm_err * steer_range * steer_gain))
+                target_angle = max(float(min_a), min(float(max_a), target_angle))
+
                 if self._last_steer_angle is None:
-                    self._last_steer_angle = target_angle
-                else:
-                    self._last_steer_angle = (alpha * target_angle) + ((1.0 - alpha) * self._last_steer_angle)
-                    
+                    self._last_steer_angle = float(center)
+                smoothed = (steer_alpha * target_angle) + ((1.0 - steer_alpha) * float(self._last_steer_angle))
+                delta = smoothed - float(self._last_steer_angle)
+                if delta > max_step:
+                    smoothed = float(self._last_steer_angle) + max_step
+                elif delta < -max_step:
+                    smoothed = float(self._last_steer_angle) - max_step
+                self._last_steer_angle = max(float(min_a), min(float(max_a), smoothed))
+
                 curr_angle = int(round(self._last_steer_angle))
                 steering.set_angle(curr_angle)
-                self.runtime.state.steering_angle = steering.angle
+                self.runtime.state.steering_angle = getattr(steering, 'angle', curr_angle)
             except Exception:
                 pass
 
         self.runtime.state.tracking_follow_state = drive_state
-        # Camera servo still tracks
+        self.runtime.state.tracking_metrics = {
+            **dict(getattr(self.runtime.state, 'tracking_metrics', {}) or {}),
+            'follow_area_ratio_raw': round(float(raw_area_ratio), 4),
+            'follow_area_ratio_smooth': round(float(area_ratio), 4),
+            'follow_ultrasonic_cm_raw': None if raw_sonic is None else round(float(raw_sonic), 2),
+            'follow_ultrasonic_cm_smooth': None if sonic_dist is None else round(float(sonic_dist), 2),
+            'follow_drive_state_internal': self._follow_drive_state,
+        }
         self._move_to_target(frame, target)
 
     def _scan_for_target(self):

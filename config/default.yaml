@@ -167,4 +167,14 @@ tracking:
   idle_sleep_s: 0.02
   stats_log_interval_s: 10.0
   overlay_enabled: true
+  follow_reverse_enabled: true
+  follow_target_lock_iou_min: 0.12
+  follow_target_lock_center_px: 160
+  follow_target_switch_margin: 1.2
+  follow_distance_hysteresis_cm: 6
+  follow_image_size_hysteresis: 0.025
+  follow_distance_smoothing_alpha: 0.35
+  follow_steer_smoothing_alpha: 0.25
+  follow_min_drive_update_s: 0.2
+  follow_steer_max_step_deg: 6
 
