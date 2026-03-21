@@ -174,10 +174,12 @@ tracking:
   follow_distance_hysteresis_cm: 6
   follow_image_size_hysteresis: 0.025
   follow_distance_smoothing_alpha: 0.35
-  follow_steer_smoothing_alpha: 0.35
+  follow_steer_smoothing_alpha: 0.45
   follow_min_drive_update_s: 0.2
-  follow_steer_max_step_deg: 12
-  follow_steer_deadzone_px: 24
-  follow_image_steer_weight: 0.4
-  follow_pan_steer_weight: 0.6
+  follow_steer_max_step_deg: 8
+  follow_steer_deadzone_px: 36
+  follow_image_steer_weight: 0.7
+  follow_pan_steer_weight: 0.3
+  follow_pan_steer_smoothing_alpha: 0.2
+  follow_steer_jitter_deg: 2
 
