@@ -492,30 +492,58 @@ class TrackingService:
                     motors.stop()
                     drive_state = 'stopped'
 
-        # --- Steering: proportional to horizontal offset ---
+        # --- Steering: True Heading Error (Pan Angle + Image Offset) ---
         if steering:
-            err_x = float(target.center_x - (frame_w / 2.0))
+            servo = getattr(self.runtime.registry, 'camera_servo', None)
             steer_gain = float(cfg.get('follow_steer_gain', 0.6))
             center = getattr(steering, 'center_angle', 90)
             min_a = getattr(steering, 'min_angle', 45)
             max_a = getattr(steering, 'max_angle', 135)
             invert = bool(getattr(steering, 'invert', False))
+            
+            err_x = float(target.center_x - (frame_w / 2.0))
+            
+            if servo:
+                current_pan = float(getattr(servo, 'pan_angle', 90))
+                pan_center = float(getattr(servo, 'pan_center', 90))
+                
+                # 1. Error from the camera's physical pan angle
+                pan_err_deg = current_pan - pan_center
+                
+                # 2. Residual error from the image frame
+                # Assume a ~60 degree Horizontal Field of View for the PiCamera.
+                # error in pixels * (60 degrees / frame width) = error in degrees.
+                fov_degrees = 60.0
+                img_err_deg = err_x * (fov_degrees / max(1.0, frame_w))
+                
+                # True heading error relative to the chassis
+                total_err_deg = pan_err_deg + img_err_deg
+                
+                # Normalise to [-1.0, 1.0] assuming a max reasonable tracking angle of ~50 degrees
+                norm_err = total_err_deg / 50.0
+            else:
+                # Fallback if servo is missing: just use image frame
+                norm_err = err_x / max(1.0, frame_w / 2.0)
+
             # Apply a deadzone so small offsets don't cause constant jitter
             deadzone = float(cfg.get('x_deadzone_px', 48))
-            if abs(err_x) < deadzone:
-                err_x = 0.0
-            # Normalise error to [-1, 1] based on half frame width
-            norm_err = err_x / max(1.0, frame_w / 2.0)
+            norm_deadzone = deadzone / max(1.0, frame_w / 2.0)
+            if abs(norm_err) < norm_deadzone:
+                norm_err = 0.0
+                
             # Clamp normalised error to [-1, 1]
             norm_err = max(-1.0, min(1.0, norm_err))
+            
             # Flip direction when the steering hardware is inverted
             if invert:
                 norm_err = -norm_err
+                
             # Use the correct half-range for each steering direction
             if norm_err >= 0:
                 steer_range = float(max_a - center)
             else:
                 steer_range = float(center - min_a)
+                
             target_angle = center + int(norm_err * steer_range * steer_gain)
             target_angle = max(min_a, min(max_a, target_angle))
             try:
