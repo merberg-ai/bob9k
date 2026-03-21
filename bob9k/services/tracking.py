@@ -86,6 +86,7 @@ class TrackingService:
         self._tracker = VisionTracker(self._config)
         self._last_seen_ts = None
         self._last_move_ts = 0.0
+        self._last_steer_angle = None
         self._scan_dir = 1
         self._scan_tilt_dir = 1
         self._latest_jpeg = b''
@@ -434,7 +435,19 @@ class TrackingService:
                     pass
             if steering:
                 try:
-                    steering.center()
+                    center_ang = getattr(steering, 'center_angle', 90)
+                    alpha = float(cfg.get('smoothing_alpha', 0.4))
+                    if self._last_steer_angle is not None:
+                        self._last_steer_angle = (alpha * center_ang) + ((1.0 - alpha) * self._last_steer_angle)
+                        curr_angle = int(round(self._last_steer_angle))
+                        if abs(curr_angle - center_ang) <= 1:
+                            curr_angle = center_ang
+                            self._last_steer_angle = None
+                        steering.set_angle(curr_angle)
+                        self.runtime.state.steering_angle = curr_angle
+                    else:
+                        steering.center()
+                        self.runtime.state.steering_angle = center_ang
                 except Exception:
                     pass
             self.runtime.state.tracking_follow_state = 'stopped'
@@ -513,14 +526,9 @@ class TrackingService:
                 if cfg.get('invert_pan_error', False):
                     pan_err_deg = -pan_err_deg
                 
-                # 2. Residual error from the image frame
-                # Assume a ~60 degree Horizontal Field of View for the PiCamera.
-                # error in pixels * (60 degrees / frame width) = error in degrees.
-                fov_degrees = 60.0
-                img_err_deg = err_x * (fov_degrees / max(1.0, frame_w))
-                
-                # True heading error relative to the chassis
-                total_err_deg = pan_err_deg + img_err_deg
+                # We purely use the camera's smoothed pan angle to drive steering, completely
+                # ignoring the jittery raw image bounding-box offset.
+                total_err_deg = pan_err_deg
                 
                 # Normalise to [-1.0, 1.0] assuming a max reasonable tracking angle of ~50 degrees
                 norm_err = total_err_deg / 50.0
@@ -549,8 +557,17 @@ class TrackingService:
                 
             target_angle = center + int(norm_err * steer_range * steer_gain)
             target_angle = max(min_a, min(max_a, target_angle))
+            
             try:
-                steering.set_angle(target_angle)
+                # Apply exponential smoothing to the steering servo
+                alpha = float(cfg.get('smoothing_alpha', 0.4))
+                if self._last_steer_angle is None:
+                    self._last_steer_angle = target_angle
+                else:
+                    self._last_steer_angle = (alpha * target_angle) + ((1.0 - alpha) * self._last_steer_angle)
+                    
+                curr_angle = int(round(self._last_steer_angle))
+                steering.set_angle(curr_angle)
                 self.runtime.state.steering_angle = steering.angle
             except Exception:
                 pass
