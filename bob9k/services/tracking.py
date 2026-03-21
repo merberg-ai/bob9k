@@ -66,9 +66,12 @@ class TrackingService:
         'follow_distance_hysteresis_cm': 6,
         'follow_image_size_hysteresis': 0.025,
         'follow_distance_smoothing_alpha': 0.35,
-        'follow_steer_smoothing_alpha': 0.25,
+        'follow_steer_smoothing_alpha': 0.35,
         'follow_min_drive_update_s': 0.2,
-        'follow_steer_max_step_deg': 6,
+        'follow_steer_max_step_deg': 12,
+        'follow_steer_deadzone_px': 24,
+        'follow_image_steer_weight': 0.4,
+        'follow_pan_steer_weight': 0.6,
         'invert_pan_error': False,
     }
 
@@ -147,6 +150,7 @@ class TrackingService:
             'follow_target_lock_iou_min', 'follow_target_switch_margin',
             'follow_image_size_hysteresis', 'follow_distance_smoothing_alpha',
             'follow_steer_smoothing_alpha', 'follow_min_drive_update_s',
+            'follow_image_steer_weight', 'follow_pan_steer_weight',
         ):
             cfg[name] = float(cfg.get(name, self.DEFAULTS[name]))
         for name in (
@@ -154,7 +158,7 @@ class TrackingService:
             'scan_tilt_step', 'process_every_n_frames', 'box_padding_px', 'yolo_imgsz', 'jpeg_every_n_frames',
             'follow_target_distance_cm', 'follow_distance_tolerance_cm', 'follow_drive_speed',
             'follow_stop_distance_cm', 'follow_target_lock_center_px', 'follow_distance_hysteresis_cm',
-            'follow_steer_max_step_deg',
+            'follow_steer_max_step_deg', 'follow_steer_deadzone_px',
         ):
             cfg[name] = int(cfg.get(name, self.DEFAULTS[name]))
         for name in (
@@ -184,6 +188,9 @@ class TrackingService:
         cfg['follow_steer_smoothing_alpha'] = max(0.0, min(1.0, cfg['follow_steer_smoothing_alpha']))
         cfg['follow_min_drive_update_s'] = max(0.0, cfg['follow_min_drive_update_s'])
         cfg['follow_steer_max_step_deg'] = max(1, cfg['follow_steer_max_step_deg'])
+        cfg['follow_steer_deadzone_px'] = max(0, cfg['follow_steer_deadzone_px'])
+        cfg['follow_image_steer_weight'] = max(0.0, min(1.0, cfg['follow_image_steer_weight']))
+        cfg['follow_pan_steer_weight'] = max(0.0, min(1.0, cfg['follow_pan_steer_weight']))
         return cfg
 
     def _sync_state_basics(self):
@@ -621,14 +628,35 @@ class TrackingService:
                 max_a = getattr(steering, 'max_angle', 135)
                 invert = bool(getattr(steering, 'invert', False))
                 steer_gain = float(cfg.get('follow_steer_gain', 0.6))
-                steer_alpha = float(cfg.get('follow_steer_smoothing_alpha', 0.25))
-                max_step = int(cfg.get('follow_steer_max_step_deg', 6))
+                steer_alpha = float(cfg.get('follow_steer_smoothing_alpha', 0.35))
+                max_step = int(cfg.get('follow_steer_max_step_deg', 12))
+                follow_deadzone_px = float(cfg.get('follow_steer_deadzone_px', 24))
+                image_weight = float(cfg.get('follow_image_steer_weight', 0.4))
+                pan_weight = float(cfg.get('follow_pan_steer_weight', 0.6))
 
                 err_x = float(target.center_x - (frame_w / 2.0))
-                norm_err = err_x / max(1.0, frame_w / 2.0)
-                norm_deadzone = float(cfg.get('x_deadzone_px', 48)) / max(1.0, frame_w / 2.0)
-                if abs(norm_err) < norm_deadzone:
-                    norm_err = 0.0
+                image_norm_err = err_x / max(1.0, frame_w / 2.0)
+                image_deadzone = follow_deadzone_px / max(1.0, frame_w / 2.0)
+                if abs(image_norm_err) < image_deadzone:
+                    image_norm_err = 0.0
+
+                pan_norm_err = 0.0
+                camera_servo = getattr(self.runtime.registry, 'camera_servo', None)
+                if camera_servo is not None:
+                    pan_angle = float(getattr(camera_servo, 'pan_angle', getattr(self.runtime.state, 'pan_angle', 90)))
+                    pan_center = float(getattr(camera_servo, 'pan_center', getattr(self.runtime.state, 'pan_center', 90)))
+                    pan_min = float(getattr(camera_servo, 'pan_min', 40))
+                    pan_max = float(getattr(camera_servo, 'pan_max', 140))
+                    if pan_angle >= pan_center:
+                        pan_span = max(1.0, pan_max - pan_center)
+                    else:
+                        pan_span = max(1.0, pan_center - pan_min)
+                    pan_norm_err = (pan_angle - pan_center) / pan_span
+                    if bool(cfg.get('invert_pan_error', False)):
+                        pan_norm_err = -pan_norm_err
+
+                weight_total = max(1e-6, image_weight + pan_weight)
+                norm_err = ((image_norm_err * image_weight) + (pan_norm_err * pan_weight)) / weight_total
                 norm_err = max(-1.0, min(1.0, norm_err))
                 if invert:
                     norm_err = -norm_err
@@ -650,6 +678,13 @@ class TrackingService:
                 curr_angle = int(round(self._last_steer_angle))
                 steering.set_angle(curr_angle)
                 self.runtime.state.steering_angle = getattr(steering, 'angle', curr_angle)
+                self.runtime.state.tracking_metrics = {
+                    **dict(getattr(self.runtime.state, 'tracking_metrics', {}) or {}),
+                    'follow_image_err_norm': round(float(image_norm_err), 4),
+                    'follow_pan_err_norm': round(float(pan_norm_err), 4),
+                    'follow_steer_err_norm': round(float(norm_err), 4),
+                    'follow_steer_target_angle': round(float(target_angle), 2),
+                }
             except Exception:
                 pass
 
