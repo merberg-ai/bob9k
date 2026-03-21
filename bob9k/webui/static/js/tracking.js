@@ -223,8 +223,8 @@ function initHelpTooltips() {
       tooltip.textContent = text;
       tooltip.style.display = 'block';
       const rect = btn.getBoundingClientRect();
-      let left = rect.left + window.scrollX;
-      let top = rect.bottom + window.scrollY + 6;
+      let left = rect.left;
+      let top = rect.bottom + 6;
       // Prevent going off-screen right
       if (left + 290 > window.innerWidth) left = window.innerWidth - 296;
       tooltip.style.left = left + 'px';

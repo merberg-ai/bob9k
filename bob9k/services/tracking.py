@@ -67,6 +67,20 @@ class TrackingService:
         self._stop = threading.Event()
         self._thread = None
         self._config = self._normalize(dict(runtime.config.get('tracking', {})))
+
+        # Boot safety: never start in object_follow mode.
+        # Prevents the robot from driving autonomously immediately on startup
+        # (e.g. driving off a table or cliff after a reboot).
+        # This reset is intentionally NOT persisted — runtime.yaml keeps the
+        # user's saved mode preference so they can re-enable follow from the UI.
+        if self._config.get('mode') == 'object_follow':
+            self._config['mode'] = 'camera_track'
+            runtime.config.setdefault('tracking', {})['mode'] = 'camera_track'
+            logger.info(
+                'Boot safety: tracking mode reset from object_follow → camera_track '
+                '(not persisted; re-enable follow mode via the UI)'
+            )
+
         self._detector = build_detector(self._config.get('detector', 'face'), self._config)
         self._tracker = VisionTracker(self._config)
         self._last_seen_ts = None

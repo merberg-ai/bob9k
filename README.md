@@ -1,101 +1,183 @@
 <div align="center">
   <img src="https://img.icons8.com/color/96/000000/robot-3.png" alt="bob9k logo" width="100"/>
-  <h1>bob9k 🤖 (v1.1 Stable)</h1>
-  <p><em>Mobile-first robot control scaffold for the Adeept PiCar platform.</em> 🚗💨</p>
+  <h1>bob9k 🤖 (v1.6-beta)</h1>
+  <p><em>Modular Raspberry Pi robot control system for the Adeept PiCar platform.</em> 🚗💨</p>
 
   [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
   [![Flask](https://img.shields.io/badge/Flask-3.x-lightgrey.svg)](https://flask.palletsprojects.com/)
   [![Hardware](https://img.shields.io/badge/Hardware-Adeept_PiCar-orange.svg)](https://www.adeept.com/)
-  [![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)]()
+  [![Status](https://img.shields.io/badge/Status-Beta-yellow.svg)]()
 </div>
 
 <br />
 
-`bob9k` is a modern, lightweight, and extensible web interface and API for controlling the **Adeept PiCar**, providing a robust foundation for your Raspberry Pi robotics projects. 
-
-Version 1.1 brings drastically improved controller support, custom RGB headlight tuning, and silky-smooth cinematic camera controls. 🚀
+`bob9k` is a structured, extensible robot runtime for the **Adeept PiCar** platform. It combines real-time hardware control, computer vision object tracking, a live camera stream, gamepad support, and a polished browser-based UI into a single cohesive system.
 
 ## ✨ Features
-- 🚀 **Safe Boot-time Initialization**: Orderly startup of I2C and GPIO resources to avoid conflicts.
-- 🔒 **Single-Process IO Ownership**: Prevents resource conflicts and hardware glitches.
-- 🚦 **RGB Eye Status Control**: Visual system status feedback with an interactive **Custom Color Picker** UI.
-- 📱 **Mobile-Friendly Web UI**: Responsive dark flat-glassmorphic interface designed natively for smartphones and tablets.
-- 🎮 **Robust Gamepad Support**: Deep integration with Xbox/Bluetooth controllers featuring:
-  - Dynamic right-stick camera mappings with **Cinematic Smoothing**.
-  - Interactive Web UI to test inputs and natively remap any axis/button on the fly.
-  - Quick-toggle cycle for Headlight states (Off -> Green -> Red -> Blue -> White -> Police -> Custom).
-- 🤖 **Computer Vision Object Tracking**: Proportional OpenCV Haar Cascade face tracking loop to automatically keep targets centered using smooth pan/tilt servo adjustments.
-- 🎥 **Tuned Camera Streaming**: Upgraded picamera2 integration with improved default exposure and contrast parameters to avoid washed-out streams.
-- 🕹️ **API First Design**: Complete RESTful interface for external control and scripting.
+
+### 🤖 Motion & Safety
+- Forward / reverse / stop with configurable speed
+- Steering center / left / right / direct angle set
+- Motor watchdog timeout (auto-stop if connection goes silent)
+- Emergency stop latch (`estop`) with motion lock
+- Battery voltage monitoring with low/critical warnings
+- **Safe-boot follow mode** — `object_follow` mode is always disabled on startup to prevent autonomous driving on reboot
+
+### 🎥 Camera & Vision
+- **Live MJPEG streaming** via `picamera2` with tunable exposure, contrast, saturation, and AWB
+- **Pan/tilt camera servo** with software trim, configurable limits, and home position
+- **Computer Vision Tracking** with multiple detector backends:
+  - Haar Cascade face & body detection (built-in, zero extra dependencies)
+  - Motion detection tracking
+  - YOLO object detection (optional; requires `ultralytics`)
+- Two tracking modes:
+  - **`camera_track`** — Servo-only; camera follows target using proportional pan/tilt control
+  - **`object_follow`** — Full autonomous follow; steers and drives motors to maintain distance from target (with optional ultrasonic obstacle guard)
+- Scan-when-lost behaviour: camera sweeps to re-acquire a lost target
+- Configurable detection filters, deadzone, smoothing, and scan speed
+
+### 🎮 Gamepad / Controller
+- USB and Bluetooth gamepad support via the browser Gamepad API
+- Interactive **input remapping** for every axis and button
+- Cinematic right-stick camera smoothing
+- Quick-cycle headlight states (Off → Green → Red → Blue → White → Police → Custom)
+- Live controller debug view
+
+### 💡 RGB Lighting
+- WS2812 RGB "eye" LEDs with system-status-aware behaviour (booting, ready, error, battery critical, police flash)
+- Interactive **custom colour picker** in the web UI
+
+### 📊 Telemetry
+- Live battery voltage / percentage / status
+- Ultrasonic distance reading
+- Motor and steering state
+- Pan / tilt / tracking state
+- Controller connected status
+
+### 🌐 Web UI Tabs
+| Tab | Description |
+|-----|-------------|
+| **Dashboard** | Live telemetry overview |
+| **Remote** | Full-HUD camera + drive controls (mobile-optimised) |
+| **Control** | Drive buttons and camera controls |
+| **Tracking** | Vision detector selection, mode toggle, all tuning parameters |
+| **Controller** | Gamepad input test and remapping |
+| **Lights** | RGB eye control and colour picker |
+| **Settings** | API and hardware settings |
+| **System** | App version, git info, system diagnostics |
+
+### 🕹️ API First Design
+- Complete RESTful API for all subsystems (`/api/motion`, `/api/tracking`, `/api/lights`, etc.)
+- All settings tunable at runtime with persistent overrides via `runtime.yaml`
+
+---
 
 ## 🛠️ Hardware Requirements
 - **Raspberry Pi** (3 / 4 / Zero 2 W recommended)
-- **Adeept PiCar Kit** or compatible components:
-  - Motor Driver (PCA9685/TB6612)
-  - Servos for steering and camera
+- **Adeept PiCar Kit** or compatible:
+  - Motor driver (PCA9685 / TB6612)
+  - Steering and camera pan/tilt servos
   - WS2812 RGB LED strip ("eyes")
+  - HC-SR04 ultrasonic sensor (optional; used for `object_follow` obstacle guard)
+
+---
 
 ## 🚀 Installation
 
-`bob9k` comes with a comprehensive installation script that sets up the Python environment, installs dependencies, and configures it to seamlessly run as a `systemd` service.
+`bob9k` ships with a comprehensive install script that sets up the Python environment, installs all dependencies, and registers it as a `systemd` service.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/bob9k.git
-   cd bob9k
-   ```
+**1. Clone the repository:**
+```bash
+git clone https://github.com/yourusername/bob9k.git
+cd bob9k
+```
 
-2. **Run the install script:**
-   ```bash
-   cd install
-   sudo ./install.sh
-   ```
+**2. Run the install script:**
+```bash
+cd install
+sudo ./install.sh
+```
 
-The script will handle:
-- Checking for conflicting Adeept/PiCar services.
-- Installing required `apt` dependencies (`python3-gpiozero`, `i2c-tools`, etc.).
-- Creating a dedicated Python virtual environment.
-- Registering `bob9k.service` with `systemd`.
+The script will:
+- Check for conflicting Adeept / PiCar services and warn if any are found
+- Install required `apt` packages (`python3-gpiozero`, `i2c-tools`, `python3-venv`, `libcamera` tools, etc.)
+- Create a dedicated Python virtual environment and install all `requirements.txt` packages
+- Register and enable `bob9k.service` with `systemd`
+
+> **Optional — YOLO detection:** To use the YOLO detector backend, install ultralytics in the venv after installation:
+> ```bash
+> /opt/bob9k/venv/bin/pip install ultralytics
+> ```
+
+---
 
 ## 🎮 Usage
 
-Once installed and running, you can access the responsive web interface via any browser on your network.
+Once running, open the web interface from any device on your network:
 
-```text
-http://<raspberry-pi-ip>:5000/
+```
+http://<raspberry-pi-ip>:8080/
 ```
 
 ### ⚙️ Managing the Service
-If installed via `install.sh`, it runs transparently as a background service:
 
 ```bash
-# Check the service status
+# Check status
 sudo systemctl status bob9k --no-pager -l
 
-# Start / Restart the service
+# Start / Restart
 sudo systemctl restart bob9k
 
-# Stop the service
+# Stop
 sudo systemctl stop bob9k
 
-# Watch live application logs
+# Watch live logs
 journalctl -u bob9k -f
 ```
 
+### 🔄 Reloading Without a Full Restart
+```bash
+./reload.sh
+```
+
+---
+
 ## 📂 Project Structure
-- `app.py`: The Flask application entry point.
-- `bob9k/`: Core Python package directory.
-  - `api/`: REST API route definitions (`lights`, `motion`, `settings`, etc.).
-  - `services/`: Hardware control, telemetry, safety handlers, and gamepad logic.
-  - `webui/`: HTML templates and static assets for the frontend.
-- `config/`: Configuration files (e.g., `config.yaml`, `runtime.yaml`).
-- `install/`: Installation, checking, and uninstallation scripts for system deployment.
+
+```
+bob9k/
+├── app.py                  # Entry point
+├── bob9k/
+│   ├── api/                # REST API route handlers (motion, tracking, lights, …)
+│   ├── hardware/           # Low-level hardware drivers (motors, servos, camera, …)
+│   ├── services/           # Application services (tracking, gamepad, telemetry, …)
+│   ├── vision/             # Vision detectors and tracker logic
+│   ├── webui/              # Flask templates + static JS/CSS
+│   ├── config.py           # Config loading and merging
+│   └── state.py            # Shared runtime state dataclass
+├── config/
+│   ├── default.yaml        # Base configuration (checked in)
+│   └── runtime.yaml        # User overrides / persistent state (gitignored)
+└── install/                # Install, uninstall, and conflict-check scripts
+```
+
+---
 
 ## 🔧 Configuration
-The main configuration is located at `config/config.yaml`. It seamlessly manages pin assignments, API settings, and hardware limits. Overrides and persistent state are automatically saved to `config/runtime.yaml`.
+
+All hardware pin assignments, limits, and feature defaults live in `config/default.yaml`. User overrides and persistent UI settings are automatically saved to `config/runtime.yaml` (not committed to git).
+
+To reset all settings to factory defaults:
+```bash
+rm config/runtime.yaml
+sudo systemctl restart bob9k
+```
+
+---
 
 ## 🤝 Contributing
-Contributions, issues, and feature requests are welcome! Feel free to check the issues page.
+
+Contributions, issues, and feature requests are welcome. Feel free to open an issue or pull request.
 
 ---
 <div align="center">
