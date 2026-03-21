@@ -54,7 +54,7 @@ class TrackingService:
         'follow_target_distance_cm': 60,
         'follow_distance_tolerance_cm': 15,
         'follow_drive_speed': 30,
-        'follow_steer_gain': 0.4,
+        'follow_steer_gain': 0.6,
         'follow_use_ultrasonic': False,
         'follow_stop_distance_cm': 25,
         'follow_image_size_ratio_target': 0.25,
@@ -481,14 +481,28 @@ class TrackingService:
         # --- Steering: proportional to horizontal offset ---
         if steering:
             err_x = float(target.center_x - (frame_w / 2.0))
-            steer_gain = float(cfg.get('follow_steer_gain', 0.4))
+            steer_gain = float(cfg.get('follow_steer_gain', 0.6))
             center = getattr(steering, 'center_angle', 90)
             min_a = getattr(steering, 'min_angle', 45)
             max_a = getattr(steering, 'max_angle', 135)
+            invert = bool(getattr(steering, 'invert', False))
+            # Apply a deadzone so small offsets don't cause constant jitter
+            deadzone = float(cfg.get('x_deadzone_px', 48))
+            if abs(err_x) < deadzone:
+                err_x = 0.0
             # Normalise error to [-1, 1] based on half frame width
             norm_err = err_x / max(1.0, frame_w / 2.0)
-            steer_range = (max_a - center)
-            target_angle = int(center + norm_err * steer_range * steer_gain)
+            # Clamp normalised error to [-1, 1]
+            norm_err = max(-1.0, min(1.0, norm_err))
+            # Flip direction when the steering hardware is inverted
+            if invert:
+                norm_err = -norm_err
+            # Use the correct half-range for each steering direction
+            if norm_err >= 0:
+                steer_range = float(max_a - center)
+            else:
+                steer_range = float(center - min_a)
+            target_angle = center + int(norm_err * steer_range * steer_gain)
             target_angle = max(min_a, min(max_a, target_angle))
             try:
                 steering.set_angle(target_angle)
