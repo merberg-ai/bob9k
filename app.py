@@ -9,6 +9,7 @@ from bob9k.api.routes_system import register_system_routes
 from bob9k.api.routes_bluetooth import register_bluetooth_routes
 from bob9k.api.routes_network import register_network_routes
 from bob9k.api.routes_tracking import register_tracking_routes
+from bob9k.api.routes_patrol import register_patrol_routes
 from bob9k.config import load_config
 from bob9k.logging_setup import setup_logging
 from bob9k.services.safety import safe_shutdown
@@ -31,6 +32,7 @@ def create_app() -> Flask:
     register_bluetooth_routes(app)
     register_network_routes(app)
     register_tracking_routes(app)
+    register_patrol_routes(app)
     @app.get('/healthz')
     def healthz():
         return {'ok': True, 'service': 'bob9k'}

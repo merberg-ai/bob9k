@@ -15,9 +15,20 @@ function patrolLog(msg) {
 
 async function patrolFetch(url, opts={}) {
   const r = await fetch(url, {headers: {'Content-Type':'application/json'}, ...opts});
-  const data = await r.json();
+  const raw = await r.text();
+  let data = null;
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      const snippet = raw.replace(/\s+/g, ' ').slice(0, 80);
+      throw new Error(`non-JSON response (${r.status}): ${snippet}`);
+    }
+  }
+
   if (!r.ok) throw new Error(data?.error || `request failed: ${r.status}`);
-  return data;
+  return data || {};
 }
 
 function patrolSetValue(id, value) {

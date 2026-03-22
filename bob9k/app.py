@@ -7,6 +7,7 @@ from bob9k.api.routes_settings import register_settings_routes
 from bob9k.api.routes_status import register_status_routes
 from bob9k.api.routes_system import register_system_routes
 from bob9k.api.routes_bluetooth import register_bluetooth_routes
+from bob9k.api.routes_network import register_network_routes
 from bob9k.api.routes_tracking import register_tracking_routes
 from bob9k.api.routes_patrol import register_patrol_routes
 from bob9k.config import load_config
@@ -19,7 +20,7 @@ def create_app() -> Flask:
     config = load_config()
     logger = setup_logging(config)
     runtime = StartupManager(config=config, logger=logger).initialize()
-    app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'bob9k','webui','templates'), static_folder=os.path.join(os.path.dirname(__file__), 'bob9k','webui','static'))
+    app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'webui','templates'), static_folder=os.path.join(os.path.dirname(__file__), 'webui','static'))
     app.config['BOB9K_RUNTIME'] = runtime
     app.config['BOB9K_CONFIG'] = config
     register_webui_routes(app)
@@ -29,6 +30,7 @@ def create_app() -> Flask:
     register_settings_routes(app)
     register_system_routes(app)
     register_bluetooth_routes(app)
+    register_network_routes(app)
     register_tracking_routes(app)
     register_patrol_routes(app)
     @app.get('/healthz')
