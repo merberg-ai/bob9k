@@ -12,8 +12,8 @@ class PatrolService:
         'enabled': False,
         'speed': 35,
         'avoidance_distance_cm': 30,
-        'targets': '',  # comma separated
-        'detection_behavior': 'log', # 'log' or 'follow'
+        'targets': '',
+        'detection_behavior': 'log',
         'scan_pan_min': 45,
         'scan_pan_max': 135,
         'scan_step': 2,
@@ -35,15 +35,11 @@ class PatrolService:
         self._stop = threading.Event()
         self._thread = None
         self._config = self._normalize(dict(runtime.config.get('patrol', {})))
-        
-        # Detector is shared or standalone? Better standalone for patrol, or use same builder
         self._detector = build_detector(self._config.get('detector', 'yolo'), self._config)
-        
         self._scan_dir = 1
         self._avoiding = False
         self._avoid_step = 0
         self._avoid_ts = 0.0
-        
         self._sync_state_basics()
 
     def _normalize(self, source: dict) -> dict:
@@ -59,15 +55,13 @@ class PatrolService:
         cfg['scan_tilt_angle'] = int(cfg.get('scan_tilt_angle', 90))
         cfg['confidence_min'] = max(0.0, min(1.0, float(cfg.get('confidence_min', 0.45))))
         
-        # Parse targets
         raw_targets = cfg.get('targets', '')
         if isinstance(raw_targets, str):
             cfg['targets'] = [x.strip().lower() for x in raw_targets.split(',') if x.strip()]
         elif isinstance(raw_targets, list):
             cfg['targets'] = [str(x).strip().lower() for x in raw_targets]
 
-        cfg['yolo_classes'] = list(cfg['targets']) # For YOLO detector optimization
-        
+        cfg['yolo_classes'] = list(cfg['targets'])
         return cfg
 
     def _sync_state_basics(self):
@@ -181,24 +175,19 @@ class PatrolService:
                 
                 if self._avoiding:
                     if self._avoid_step == 1:
-                        # Stop and wait
                         motors.stop()
                         if now - self._avoid_ts > 0.5:
                             self._avoid_step = 2
                             self._avoid_ts = now
                     elif self._avoid_step == 2:
-                        # Reverse
                         motors.backward(speed)
                         if now - self._avoid_ts > 1.0:
                             self._avoid_step = 3
                             self._avoid_ts = now
-                            # Random turn
                             steering.set_angle(random.choice([45, 135])) 
                     elif self._avoid_step == 3:
-                        # Turn
                         motors.forward(speed)
                         if now - self._avoid_ts > 1.0:
-                            # Resume forward
                             steering.center()
                             self._avoiding = False
                             self._avoid_step = 0
@@ -206,7 +195,6 @@ class PatrolService:
                             motors.forward(speed)
                 else:
                     if dist is not None and dist > 0 and dist < avoid_dist:
-                        # Init avoidance
                         self._avoiding = True
                         self._avoid_step = 1
                         self._avoid_ts = now
@@ -224,7 +212,6 @@ class PatrolService:
                 p_max = self._config.get('scan_pan_max', 135)
                 step = self._config.get('scan_step', 2)
                 
-                # Nudge tilt to fixed level during patrol
                 servo.set_tilt(self._config.get('scan_tilt_angle', 90))
                 
                 pan += step * self._scan_dir
