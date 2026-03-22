@@ -18,18 +18,18 @@ def _state_payload(runtime):
     }
 
 def register_patrol_routes(app: Flask) -> None:
-    @app.get('/api/patrol/state')
+    @app.route('/api/patrol/state', methods=['GET'], strict_slashes=False)
     def patrol_state():
         runtime = current_app.config['BOB9K_RUNTIME']
         return {'ok': True, 'state': _state_payload(runtime)}
 
-    @app.get('/api/patrol/config')
+    @app.route('/api/patrol/config', methods=['GET'], strict_slashes=False)
     def patrol_config():
         runtime = current_app.config['BOB9K_RUNTIME']
         cfg = runtime.patrol.get_config() if runtime.patrol else dict(runtime.config.get('patrol', {}))
         return {'ok': True, 'config': cfg}
 
-    @app.post('/api/patrol/config')
+    @app.route('/api/patrol/config', methods=['POST'], strict_slashes=False)
     def patrol_update_config():
         runtime = current_app.config['BOB9K_RUNTIME']
         payload = request.get_json(force=True, silent=True) or {}
@@ -38,23 +38,27 @@ def register_patrol_routes(app: Flask) -> None:
         normalized, warnings = runtime.patrol.update_config(payload, persist=True)
         return {'ok': True, 'config': normalized, 'warnings': warnings}
 
-    @app.post('/api/patrol/toggle')
+    @app.route('/api/patrol/toggle', methods=['POST'], strict_slashes=False)
     def patrol_toggle():
         runtime = current_app.config['BOB9K_RUNTIME']
         if runtime.patrol:
             runtime.patrol.toggle()
         return {'ok': True, 'enabled': runtime.state.patrol_enabled}
 
-    @app.post('/api/patrol/enable')
+    @app.route('/api/patrol/enable', methods=['POST'], strict_slashes=False)
     def patrol_enable():
         runtime = current_app.config['BOB9K_RUNTIME']
         if runtime.patrol:
             runtime.patrol.enable()
         return {'ok': True, 'enabled': runtime.state.patrol_enabled}
 
-    @app.post('/api/patrol/disable')
+    @app.route('/api/patrol/disable', methods=['POST'], strict_slashes=False)
     def patrol_disable():
         runtime = current_app.config['BOB9K_RUNTIME']
         if runtime.patrol:
             runtime.patrol.disable()
         return {'ok': True, 'enabled': runtime.state.patrol_enabled}
+
+    @app.route('/api/patrol/<path:path>', methods=['GET', 'POST', 'OPTIONS'], strict_slashes=False)
+    def patrol_catchall(path):
+        return {'ok': False, 'error': f'Patrol route not found: {path}'}, 404
