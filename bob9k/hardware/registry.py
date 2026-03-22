@@ -23,3 +23,4 @@ class RuntimeContext:
     status_leds: StatusLedService
     gamepad: object | None = None
     tracking: object | None = None
+    patrol: object | None = None

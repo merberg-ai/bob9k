@@ -87,6 +87,10 @@ class StartupManager:
             runtime.tracking = TrackingService(runtime, self.logger)
             runtime.tracking.start()
 
+            from bob9k.services.patrol import PatrolService
+            runtime.patrol = PatrolService(runtime, self.logger)
+            runtime.patrol.start()
+
             runtime.telemetry = TelemetryService(runtime, self.logger)
             runtime.telemetry.poll_once()
             runtime.telemetry.start()

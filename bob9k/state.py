@@ -39,3 +39,13 @@ class RuntimeState:
     tracking_last_error: str | None = None
     tracking_follow_distance_cm: float | None = None
     tracking_follow_state: str = 'stopped'
+
+    patrol_enabled: bool = False
+    patrol_mode: str = 'log'
+    patrol_drive_state: str = 'stopped'
+    patrol_speed: int = 0
+    patrol_targets: list[str] = field(default_factory=list)
+    patrol_detect_count: int = 0
+    patrol_last_detected: str | None = None
+    patrol_metrics: dict[str, Any] = field(default_factory=dict)
+    patrol_disable_reason: str | None = None
