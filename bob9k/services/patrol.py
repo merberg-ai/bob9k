@@ -100,29 +100,38 @@ class PatrolService:
         return dict(self._config), []
 
     def enable(self):
-        if self.runtime.tracking and self.runtime.state.tracking_enabled:
-            self.runtime.tracking.disable(reason='patrol_override')
-        
-        self._config['enabled'] = True
-        self.update_config(self._config, persist=True)
-        self._avoiding = False
-        self._avoid_step = 0
+        try:
+            self.runtime.state.patrol_last_error = None
+            if self.runtime.tracking and self.runtime.state.tracking_enabled:
+                self.runtime.tracking.disable(reason='patrol_override')
+            
+            self._config['enabled'] = True
+            self.update_config(self._config, persist=True)
+            self._avoiding = False
+            self._avoid_step = 0
+        except Exception as e:
+            self.runtime.state.patrol_last_error = f"enable() error: {e}"
+            self.logger.error(f"Patrol enable error: {e}")
 
     def disable(self, reason: str | None = None):
-        self._config['enabled'] = False
-        self.update_config(self._config, persist=True)
-        self.runtime.state.patrol_drive_state = 'stopped'
-        self.runtime.state.patrol_disable_reason = reason
-        
-        motors = getattr(self.runtime.registry, 'motors', None)
-        if motors:
-            try: motors.stop()
-            except: pass
+        try:
+            self._config['enabled'] = False
+            self.update_config(self._config, persist=True)
+            self.runtime.state.patrol_drive_state = 'stopped'
+            self.runtime.state.patrol_disable_reason = reason
             
-        steering = getattr(self.runtime.registry, 'steering', None)
-        if steering:
-            try: steering.center()
-            except: pass
+            motors = getattr(self.runtime.registry, 'motors', None)
+            if motors:
+                try: motors.stop()
+                except: pass
+                
+            steering = getattr(self.runtime.registry, 'steering', None)
+            if steering:
+                try: steering.center()
+                except: pass
+        except Exception as e:
+            self.runtime.state.patrol_last_error = f"disable() error: {e}"
+            self.logger.error(f"Patrol disable error: {e}")
 
     def toggle(self):
         if self.runtime.state.patrol_enabled:
@@ -253,6 +262,7 @@ class PatrolService:
                                 if behavior == 'follow':
                                     self._switch_to_follow(matched.label)
                     except Exception as e:
+                        self.runtime.state.patrol_last_error = f"detection loop error: {e}"
                         self.logger.error(f"Patrol detection error: {e}")
 
             time.sleep(0.05)

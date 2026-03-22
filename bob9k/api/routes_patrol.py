@@ -14,6 +14,7 @@ def _state_payload(runtime):
         'last_detected': state.patrol_last_detected,
         'metrics': state.patrol_metrics,
         'disable_reason': state.patrol_disable_reason,
+        'last_error': state.patrol_last_error,
     }
 
 def register_patrol_routes(app: Flask) -> None:

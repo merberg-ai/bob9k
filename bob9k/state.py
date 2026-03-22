@@ -49,3 +49,4 @@ class RuntimeState:
     patrol_last_detected: str | None = None
     patrol_metrics: dict[str, Any] = field(default_factory=dict)
     patrol_disable_reason: str | None = None
+    patrol_last_error: str | None = None

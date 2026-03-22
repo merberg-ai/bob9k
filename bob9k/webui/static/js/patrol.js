@@ -4,6 +4,15 @@ const $p = (id) => document.getElementById(id);
 let patrolCurrentState = null;
 let patrolLastRefresh = 0;
 
+function patrolConsoleEl() { return $p('console'); }
+
+function patrolLog(msg) {
+  const el = patrolConsoleEl();
+  if (!el) return;
+  const stamp = new Date().toLocaleTimeString();
+  el.textContent = `[${stamp}] ${msg}\n` + el.textContent;
+}
+
 async function patrolFetch(url, opts={}) {
   const r = await fetch(url, {headers: {'Content-Type':'application/json'}, ...opts});
   const data = await r.json();
@@ -47,6 +56,7 @@ async function patrolRefresh() {
   try {
     const resp = await patrolFetch('/api/patrol/state');
     const s = resp.state || {};
+    const previousError = patrolCurrentState?.last_error;
     patrolCurrentState = s;
     
     $p('status-pill-local').textContent = s.enabled ? 'Active' : 'Idle';
@@ -62,8 +72,11 @@ async function patrolRefresh() {
     const usm = s.metrics?.ultrasonic_cm;
     if($p('avoid-dist-stat')) $p('avoid-dist-stat').textContent = usm != null ? `${usm.toFixed(1)} cm` : '--';
     
+    if (s.last_error && s.last_error !== previousError) {
+      patrolLog(`error: ${s.last_error}`);
+    }
   } catch (err) {
-    console.error('Patrol refresh error', err);
+    patrolLog(`refresh error: ${err.message || err}`);
   }
 }
 
@@ -74,7 +87,7 @@ async function patrolBoot() {
     await patrolRefresh();
     setInterval(() => patrolRefresh(), 1000);
   } catch (err) {
-    console.error('Patrol boot error', err);
+    patrolLog(`boot error: ${err.message || err}`);
   }
 }
 
@@ -118,25 +131,36 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (patrolCurrentState?.enabled) {
         await patrolFetch('/api/patrol/disable', {method:'POST'});
+        patrolLog('patrol disabled');
       } else {
         await patrolFetch('/api/patrol/enable', {method:'POST'});
+        patrolLog('patrol enabled');
       }
       patrolRefresh();
-    } catch (err) { console.error('toggle error', err); }
+    } catch (err) { patrolLog(`toggle error: ${err.message || err}`); }
   });
 
   $p('save-config').addEventListener('click', async () => {
     try {
       const payload = patrolReadConfigForm();
       const rawTargets = payload.targets;
-      // Convert 'person,dog' to array of strings
       payload.targets = rawTargets.split(',').map(s=>s.trim()).filter(Boolean);
       await patrolFetch('/api/patrol/config', {method:'POST', body: JSON.stringify(payload)});
       
+      patrolLog('config saved');
       if (window.setActionMessage) setActionMessage('Patrol config saved.', 'success');
       patrolRefresh();
     } catch (err) {
+      patrolLog(`config save error: ${err.message || err}`);
       if (window.setActionMessage) setActionMessage('Failed to save patrol config.', 'error');
     }
   });
+
+  const btnClear = $p('clear-console');
+  if (btnClear) {
+    btnClear.addEventListener('click', () => {
+      const el = patrolConsoleEl();
+      if (el) el.textContent = '';
+    });
+  }
 });
