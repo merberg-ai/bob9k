@@ -65,8 +65,23 @@ class StartupManager:
             registry.camera = CameraWrapper(self.config, self.logger)
             registry.camera.start()
 
-            runtime.gamepad = GamepadService(runtime, self.logger)
-            runtime.gamepad.start()
+            if self.config.get('gamepad_enabled', True):
+                runtime.gamepad = GamepadService(runtime, self.logger)
+                runtime.gamepad.start()
+                try:
+                    import subprocess, sys
+                    if sys.platform.startswith('linux'):
+                        subprocess.run(['rfkill', 'unblock', 'bluetooth'], check=False)
+                except Exception:
+                    pass
+            else:
+                runtime.gamepad = None
+                try:
+                    import subprocess, sys
+                    if sys.platform.startswith('linux'):
+                        subprocess.run(['rfkill', 'block', 'bluetooth'], check=False)
+                except Exception:
+                    pass
 
             from bob9k.services.tracking import TrackingService
             runtime.tracking = TrackingService(runtime, self.logger)

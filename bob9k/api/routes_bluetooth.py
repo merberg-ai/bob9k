@@ -5,6 +5,48 @@ from bob9k.config import load_runtime_config, save_runtime_config
 from bob9k.services.gamepad import GamepadService
 
 def register_bluetooth_routes(app: Flask) -> None:
+    @app.get('/api/bluetooth/service_status')
+    def get_service_status():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        return {'ok': True, 'gamepad_enabled': bool(runtime.config.get('gamepad_enabled', True))}
+
+    @app.post('/api/bluetooth/toggle_service')
+    def toggle_gamepad_service():
+        runtime = current_app.config['BOB9K_RUNTIME']
+        payload = request.get_json(force=True, silent=True) or {}
+        enabled = str(payload.get('enabled', 'true')).lower() == 'true'
+        
+        cfg = load_runtime_config()
+        cfg['gamepad_enabled'] = enabled
+        save_runtime_config(cfg)
+        runtime.config['gamepad_enabled'] = enabled
+        
+        if enabled:
+            if not getattr(runtime, 'gamepad', None):
+                runtime.gamepad = GamepadService(runtime, runtime.logger)
+            runtime.gamepad.start()
+            try:
+                import subprocess, sys
+                if sys.platform.startswith('linux'):
+                    subprocess.run(['rfkill', 'unblock', 'bluetooth'], check=False)
+            except Exception:
+                pass
+        else:
+            if getattr(runtime, 'gamepad', None):
+                runtime.gamepad.stop()
+                runtime.gamepad = None
+            if BluetoothManager._instance:
+                BluetoothManager._instance.stop_process()
+                BluetoothManager._instance = None
+            try:
+                import subprocess, sys
+                if sys.platform.startswith('linux'):
+                    subprocess.run(['rfkill', 'block', 'bluetooth'], check=False)
+            except Exception:
+                pass
+                
+        return {'ok': True, 'gamepad_enabled': enabled}
+
     @app.post('/api/bluetooth/cmd')
     def bluetooth_command():
         runtime = current_app.config['BOB9K_RUNTIME']
