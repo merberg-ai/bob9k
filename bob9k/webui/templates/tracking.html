@@ -108,8 +108,8 @@
     <div><span>Drive Speed % <button class='help-btn' data-help='Motor speed percentage (0–100) used while the robot is approaching or retreating. Lower values give smoother, safer following.'>?</button></span>
       <input id='follow_drive_speed' type='number' min='0' max='100' step='1'>
     </div>
-    <div><span>Steer Gain <button class='help-btn' data-help='How aggressively to steer toward the horizontal position of the target. Range 0–1. Higher values react quicker but may oscillate.'>?</button></span>
-      <input id='follow_steer_gain' type='number' min='0' max='1' step='0.05'>
+    <div><span>Steer Gain: <span id='steer_gain_val' style='color:var(--accent); font-weight:bold;'>0.60</span> <button class='help-btn' data-help='How aggressively to steer toward the horizontal position of the target. >1.0 amplifies error for sharper turns. Higher values react quicker but may oscillate.'>?</button></span>
+      <input id='follow_steer_gain' type='range' min='0' max='3.0' step='0.05' oninput="document.getElementById('steer_gain_val').innerText = parseFloat(this.value).toFixed(2)">
     </div>
     <div><span>Image Size Target Ratio <button class='help-btn' data-help='(No-ultrasonic mode) Target bounding-box area as a fraction of total frame area. Used to estimate distance when the ultrasonic sensor is disabled. e.g. 0.25 = target fills ~25% of the frame.'>?</button></span>
       <input id='follow_image_size_ratio_target' type='number' min='0.01' max='0.9' step='0.01'>

@@ -40,7 +40,13 @@ function trackingFillConfig(payload) {
     'lost_timeout_s','scan_step','scan_tilt_step','process_every_n_frames','box_padding_px','preferred_target',
     'follow_target_distance_cm','follow_distance_tolerance_cm','follow_drive_speed','follow_steer_gain',
     'follow_stop_distance_cm','follow_image_size_ratio_target','follow_image_size_tolerance',
-  ].forEach((k) => trackingSetValue(k, cfg[k]));
+  ].forEach((k) => {
+    trackingSetValue(k, cfg[k]);
+    if (k === 'follow_steer_gain') {
+      const dbg = document.getElementById('steer_gain_val');
+      if (dbg && cfg[k] != null) dbg.innerText = parseFloat(cfg[k]).toFixed(2);
+    }
+  });
   trackingSetValue('enable_yolo', String(!!cfg.enable_yolo));
   trackingSetValue('yolo_classes', Array.isArray(cfg.yolo_classes) ? cfg.yolo_classes.join(',') : (cfg.yolo_classes || ''));
   [

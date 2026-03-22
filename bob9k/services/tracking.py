@@ -180,7 +180,7 @@ class TrackingService:
         cfg['idle_sleep_s'] = max(0.005, float(cfg['idle_sleep_s']))
         cfg['stats_log_interval_s'] = max(3.0, float(cfg['stats_log_interval_s']))
         cfg['follow_drive_speed'] = max(0, min(100, cfg['follow_drive_speed']))
-        cfg['follow_steer_gain'] = max(0.0, min(1.0, cfg['follow_steer_gain']))
+        cfg['follow_steer_gain'] = max(0.0, min(5.0, cfg['follow_steer_gain']))
         cfg['follow_target_distance_cm'] = max(5, cfg['follow_target_distance_cm'])
         cfg['follow_stop_distance_cm'] = max(5, cfg['follow_stop_distance_cm'])
         cfg['follow_target_lock_iou_min'] = max(0.0, min(1.0, cfg['follow_target_lock_iou_min']))
