@@ -669,10 +669,8 @@ class TrackingService:
                 else:
                     self._follow_pan_err_ema = None
 
-                weight_total = max(1e-6, image_weight + pan_weight)
-                norm_err = ((image_norm_err * image_weight) + (pan_norm_err * pan_weight)) / weight_total
-                if abs(norm_err) < max(image_deadzone * 0.75, 0.05):
-                    norm_err = 0.0
+                # Use raw weights without dividing to prevent active camera tracking from diluting steering error
+                norm_err = (image_norm_err * image_weight) + (pan_norm_err * pan_weight)
                 norm_err = max(-1.0, min(1.0, norm_err))
                 if invert:
                     norm_err = -norm_err
@@ -684,14 +682,19 @@ class TrackingService:
                 if self._last_steer_angle is None:
                     self._last_steer_angle = float(center)
                 current_angle = float(self._last_steer_angle)
+                
+                # Check jitter against raw target angle, not smoothed delta
+                if abs(target_angle - current_angle) < jitter_deg:
+                    target_angle = current_angle
+                    
                 smoothed = (steer_alpha * target_angle) + ((1.0 - steer_alpha) * current_angle)
                 delta = smoothed - current_angle
-                if abs(delta) < jitter_deg:
-                    smoothed = current_angle
-                elif delta > max_step:
+                
+                if delta > max_step:
                     smoothed = current_angle + max_step
                 elif delta < -max_step:
                     smoothed = current_angle - max_step
+                    
                 self._last_steer_angle = max(float(min_a), min(float(max_a), smoothed))
 
                 curr_angle = int(round(self._last_steer_angle))
