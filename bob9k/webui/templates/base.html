@@ -16,13 +16,17 @@
 
   <!-- Slim Top Bar -->
   <header class='app-header'>
-    <span class='header-title'>{{ page | upper if page else 'bob9k' }}</span>
+    <div style='display:flex; align-items:baseline; gap:8px;'>
+      <span class='header-title'>{{ page | upper if page else 'bob9k' }}</span>
+      <span id='app-version-tag' style='font-size:0.65rem; opacity:0.45; font-family:monospace; letter-spacing:0.02em; display:none;'></span>
+    </div>
     <div class='header-actions'>
       <div class='header-batt-mini'>
         <div class='batt-bar-mini'><div id='batt-mini-fill' class='batt-bar-mini-fill'></div></div>
         <span id='batt-mini-label'>--%</span>
       </div>
       <button data-action='global-estop' class='danger estop-button'>E-STOP</button>
+      <div id='tracking-pill' class='status-pill' style='display:none; border-color:rgba(0,255,204,0.4); color:var(--accent); margin-right:6px;'>TRACKING</div>
       <div id='status-pill' class='status-pill status-ready'>connecting</div>
     </div>
   </header>
@@ -93,6 +97,12 @@
     <a href='/remote' class='nav-item {% if page=="remote" %}active{% endif %}'>
       <span class='nav-icon'>🎯</span>HUD
     </a>
+    <a href='/tracking' class='nav-item {% if page=="tracking" %}active{% endif %}'>
+      <span class='nav-icon'>👀</span>Tracking
+    </a>
+    <a href='/patrol' class='nav-item {% if page=="patrol" %}active{% endif %}'>
+      <span class='nav-icon'>🤖</span>Patrol
+    </a>
     <a href='/settings' class='nav-item {% if page=="settings" %}active{% endif %}'>
       <span class='nav-icon'>⚙️</span>Settings
     </a>
@@ -107,6 +117,8 @@
   <script src='{{ url_for("static", filename="js/control.js") }}'></script>
   <script src='{{ url_for("static", filename="js/lights.js") }}'></script>
   <script src='{{ url_for("static", filename="js/settings.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/tracking.js") }}'></script>
+  <script src='{{ url_for("static", filename="js/patrol.js") }}'></script>
   <script src='{{ url_for("static", filename="js/system.js") }}'></script>
   <script src='{{ url_for("static", filename="js/ai.js") }}'></script>
 
@@ -116,6 +128,7 @@
       // Sync mini battery bar from telemetry — lightweight, non-blocking
       const fill = document.getElementById('batt-mini-fill');
       const label = document.getElementById('batt-mini-label');
+      let versionLoaded = false;
       async function syncBatt() {
         try {
           const d = await fetch('/api/status').then(r => r.json());
@@ -126,10 +139,29 @@
               (pct <= 15 ? ' is-critical' : pct <= 30 ? ' is-low' : '');
           }
           if (label) label.textContent = pct + '%';
+          
+          const trPill = document.getElementById('tracking-pill');
+          if (trPill) {
+            trPill.style.display = d.tracking_enabled ? 'flex' : 'none';
+          }
         } catch(e) {}
-        setTimeout(syncBatt, 5000);
+        setTimeout(syncBatt, 2000);
+      }
+      // Fetch version tag once on page load
+      async function loadVersion() {
+        if (versionLoaded) return;
+        try {
+          const d = await fetch('/api/system').then(r => r.json());
+          const vtag = document.getElementById('app-version-tag');
+          if (vtag && d.version && d.version.version_string) {
+            vtag.textContent = d.version.version_string;
+            vtag.style.display = '';
+            versionLoaded = true;
+          }
+        } catch(e) {}
       }
       syncBatt();
+      loadVersion();
     })();
   </script>
 </body>

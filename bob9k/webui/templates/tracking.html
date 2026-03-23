@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<!-- Help tooltip element (shared, repositioned by JS) -->
+<div id="help-tooltip" style="
+  display:none; position:fixed; z-index:9999;
+  background:#1a2535; color:#cee8ff; border:1px solid rgba(0,255,204,0.35);
+  border-radius:8px; padding:8px 12px; max-width:280px; font-size:0.8rem;
+  line-height:1.4; box-shadow:0 4px 18px rgba(0,0,0,0.6);
+  pointer-events:none;
+"></div>
+
+<section class='card'>
+  <div class='card-header'>
+    <div>
+      <div class='muted' style='font-size:0.8rem; text-transform:uppercase; letter-spacing:0.08em;'>bob9k vision bench</div>
+      <h2 style='margin:4px 0 6px;'>Tracking Lab</h2>
+      <p class='muted' style='margin:0;'>Face/body/motion/YOLO tracking with object following, live preview, tuning, and manual servo testing.</p>
+    </div>
+    <div style='display:flex; gap:10px; align-items:center; flex-wrap:wrap;'>
+      <div class='status-pill' id='status-pill-local'>Idle</div>
+      <button id='toggle-tracking' class='primary'>Enable</button>
+    </div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'>
+    <h3 style='margin:0;'>Live Preview</h3>
+    <div class='muted' style='display:flex; gap:14px; flex-wrap:wrap; font-size:0.9rem;'>
+      <span id='detector-name'>detector: --</span>
+      <span id='detect-count'>detections: --</span>
+      <span id='fps-stat'>fps: --</span>
+      <span id='follow-stat' style='display:none; color:var(--accent);'>follow: --</span>
+    </div>
+  </div>
+  <img id='preview' class='camera-stream' src='/video_feed?view=tracking' alt='Live preview'>
+  <div class='status-grid' style='margin-top:12px;'>
+    <div><span>Target</span><strong id='target-stat'>None</strong></div>
+    <div><span>Servo</span><strong id='servo-stat'>--</strong></div>
+    <div><span>Detector</span><strong id='detector-status'>--</strong></div>
+    <div><span>Detector Health</span><strong id='detector-health'>--</strong></div>
+    <div><span>Scan</span><strong id='scan-stat'>off</strong></div>
+    <div><span>Servo Driver</span><strong id='servo-driver'>--</strong></div>
+    <div id='follow-distance-row' style='display:none;'><span>Ultrasonic</span><strong id='follow-distance-stat'>--</strong></div>
+    <div id='follow-drive-row' style='display:none;'><span>Drive State</span><strong id='follow-drive-stat'>--</strong></div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Quick Actions</h3></div>
+  <div class='button-grid'>
+    <button id='servo-home'>Home Servos</button>
+    <button id='copy-console'>Copy Console</button>
+    <button id='copy-debug'>Copy Debug Snapshot</button>
+    <button id='refresh-now'>Refresh</button>
+    <button id='clear-console'>Clear Log</button>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Tracking Mode</h3></div>
+  <div class='status-grid'>
+    <div><span>Detector <button class='help-btn' data-help='Which detection algorithm to use. Face/Body use Haar cascades (fast, CPU-only). Motion detects pixel-level changes. YOLO requires the ultralytics package for general object detection.'>?</button></span>
+      <select id='detector'>
+        <option value='face'>Face</option>
+        <option value='body'>Full Body</option>
+        <option value='motion'>Motion</option>
+        <option value='yolo'>YOLO Objects</option>
+      </select>
+    </div>
+    <div><span>Mode <button class='help-btn' data-help='Camera Track: servo-only tracking, camera follows the target. Object Follow: drives the robot motors and steering toward the target while keeping the camera servo locked.'>?</button></span>
+      <select id='tracking_mode'>
+        <option value='camera_track'>Camera Track</option>
+        <option value='object_follow'>Object Follow (Drive)</option>
+      </select>
+    </div>
+    <div><span>Target Strategy <button class='help-btn' data-help='When multiple detections are found, which one to track: Largest (biggest bounding box), Closest to Center (nearest frame center), or Highest Confidence.'>?</button></span>
+      <select id='preferred_target'>
+        <option value='largest'>Largest box</option>
+        <option value='center'>Closest to center</option>
+        <option value='highest_confidence'>Highest confidence</option>
+      </select>
+    </div>
+    <div><span>Target Label <button class='help-btn' data-help='Optional: only track detections matching this exact label (e.g. "person", "face", "bottle"). Leave blank to track all detected objects.'>?</button></span><input id='target_label' placeholder='person, face, bottle'></div>
+    <div><span>YOLO Classes <button class='help-btn' data-help='Comma-separated list of YOLO class names to detect (e.g. "person,dog,cat"). Leave blank to detect all classes.'>?</button></span><input id='yolo_classes' placeholder='person,dog,cat'></div>
+    <div><span>Enable YOLO <button class='help-btn' data-help='Load the YOLO model into memory. Required before selecting YOLO as the detector. Requires the ultralytics Python package.'>?</button></span><select id='enable_yolo'><option value='false'>No</option><option value='true'>Yes</option></select></div>
+    <div><span>YOLO Model <button class='help-btn' data-help='YOLO model file to use. Smaller models are faster but less accurate (yolov8n.pt=nano, yolov8s.pt=small, yolov8m.pt=medium). File will be downloaded on first use.'>?</button></span><input id='yolo_model' placeholder='yolov8n.pt'></div>
+    <div><span>YOLO Image Size <button class='help-btn' data-help='Resolution used for YOLO inference (in pixels). Smaller = faster but less accurate. Must be a multiple of 32. Range: 160–1280.'>?</button></span><input id='yolo_imgsz' type='number' min='160' max='1280' step='32'></div>
+    <div><span>Min Confidence <button class='help-btn' data-help='Minimum detection confidence score (0–1). Detections below this threshold are discarded. Lower = more detections but more false positives.'>?</button></span><input id='confidence_min' type='number' min='0' max='1' step='0.01'></div>
+    <div><span>Max Results <button class='help-btn' data-help='Maximum number of detections to process per frame. Reducing this saves CPU when there are many objects in view.'>?</button></span><input id='max_results' type='number' min='1' step='1'></div>
+    <div><span>Motion Min Area <button class='help-btn' data-help='Minimum contour area (pixels²) for Motion detector. Smaller values detect subtle motion; larger values ignore small movements and noise.'>?</button></span><input id='min_area' type='number' step='100'></div>
+    <div><span>Minimum Target Area <button class='help-btn' data-help='Minimum bounding-box area (pixels²) a detection must have to be considered a valid tracking target. Filters out tiny far-away detections.'>?</button></span><input id='min_target_area' type='number' step='100'></div>
+    <div><span>Process Every N Frames <button class='help-btn' data-help='Run the detector only on every Nth camera frame. Higher values reduce CPU usage but add tracking latency. Overlay still renders every frame.'>?</button></span><input id='process_every_n_frames' type='number' min='1' step='1'></div>
+  </div>
+</section>
+
+<!-- Object Follow Settings (shown only when mode = object_follow) -->
+<section class='card' id='follow-settings-section' style='display:none;'>
+  <div class='card-header'><h3 style='margin:0;'>⬡ Object Follow Settings</h3></div>
+  <div class='status-grid'>
+    <div><span>Target Distance (cm) <button class='help-btn' data-help='Desired distance in centimetres to maintain from the tracked target. The robot will drive forward or backward to reach this distance.'>?</button></span>
+      <input id='follow_target_distance_cm' type='number' min='10' max='500' step='5'>
+    </div>
+    <div><span>Distance Tolerance (cm) <button class='help-btn' data-help='Dead-zone around the target distance. Motors will not move while within this range of the target distance (prevents constant hunting).'>?</button></span>
+      <input id='follow_distance_tolerance_cm' type='number' min='1' max='100' step='1'>
+    </div>
+    <div><span>Drive Speed % <button class='help-btn' data-help='Motor speed percentage (0–100) used while the robot is approaching or retreating. Lower values give smoother, safer following.'>?</button></span>
+      <input id='follow_drive_speed' type='number' min='0' max='100' step='1'>
+    </div>
+    <div><span>Steer Gain: <span id='steer_gain_val' style='color:var(--accent); font-weight:bold;'>0.60</span> <button class='help-btn' data-help='How aggressively to steer toward the horizontal position of the target. >1.0 amplifies error for sharper turns. Higher values react quicker but may oscillate.'>?</button></span>
+      <input id='follow_steer_gain' type='range' min='0' max='3.0' step='0.05' oninput="document.getElementById('steer_gain_val').innerText = parseFloat(this.value).toFixed(2)">
+    </div>
+    <div><span>Image Size Target Ratio <button class='help-btn' data-help='(No-ultrasonic mode) Target bounding-box area as a fraction of total frame area. Used to estimate distance when the ultrasonic sensor is disabled. e.g. 0.25 = target fills ~25% of the frame.'>?</button></span>
+      <input id='follow_image_size_ratio_target' type='number' min='0.01' max='0.9' step='0.01'>
+    </div>
+    <div><span>Image Size Tolerance <button class='help-btn' data-help='(No-ultrasonic mode) Dead-zone around image size ratio. No drive movement while within this tolerance of the target ratio.'>?</button></span>
+      <input id='follow_image_size_tolerance' type='number' min='0.01' max='0.5' step='0.01'>
+    </div>
+    <div><span>Use Ultrasonic Sensor <button class='help-btn' data-help='Use the ultrasonic distance sensor for precise distance measurements. When enabled, the robot uses actual cm readings for forward/backward decisions rather than image size estimation.'>?</button></span>
+      <select id='follow_use_ultrasonic'>
+        <option value='false'>No (image size estimation)</option>
+        <option value='true'>Yes (ultrasonic sensor)</option>
+      </select>
+    </div>
+    <div><span>Hard-Stop Distance (cm) <button class='help-btn' data-help='If the ultrasonic sensor reads a distance ≤ this value, motors are immediately stopped regardless of other settings. This prevents collisions. Only active when Use Ultrasonic is enabled.'>?</button></span>
+      <input id='follow_stop_distance_cm' type='number' min='5' max='200' step='1'>
+    </div>
+    <div><span>Invert Steering <button class='help-btn' data-help='Invert the left/right steering direction when following an object. Use this if the robot steers the wrong way when the camera pans.'>?</button></span>
+      <select id='invert_pan_error'><option value='false'>No</option><option value='true'>Yes</option></select>
+    </div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Tracking Control Tuning</h3></div>
+  <div class='status-grid'>
+    <div><span>Pan Gain <button class='help-btn' data-help='How much the pan servo moves per pixel of horizontal error. Higher = faster pan, lower = smoother. Typical range: 0.02–0.15.'>?</button></span><input id='pan_gain' type='number' step='0.01'></div>
+    <div><span>Tilt Gain <button class='help-btn' data-help='How much the tilt servo moves per pixel of vertical error. Higher = faster tilt, lower = smoother. Typical range: 0.02–0.15.'>?</button></span><input id='tilt_gain' type='number' step='0.01'></div>
+    <div><span>X Deadzone (px) <button class='help-btn' data-help='Horizontal pixel dead-zone: pan servo will not move while the target is within this many pixels of the frame center. Prevents servo jitter on small movements.'>?</button></span><input id='x_deadzone_px' type='number' step='1'></div>
+    <div><span>Y Deadzone (px) <button class='help-btn' data-help='Vertical pixel dead-zone: tilt servo will not move while the target is within this many pixels of the frame center. Prevents servo jitter on small movements.'>?</button></span><input id='y_deadzone_px' type='number' step='1'></div>
+    <div><span>Smoothing Alpha <button class='help-btn' data-help='Exponential smoothing factor for servo movement (0–1). 1 = instant jump to target, 0 = never moves. ~0.3–0.5 gives smooth fluid tracking.'>?</button></span><input id='smoothing_alpha' type='number' min='0' max='1' step='0.05'></div>
+    <div><span>Lost Timeout (s) <button class='help-btn' data-help='Seconds after losing a target before the scan sweep begins. A short grace period to avoid reacting to momentary occlusions.'>?</button></span><input id='lost_timeout_s' type='number' min='0.1' step='0.1'></div>
+    <div><span>Scan When Lost <button class='help-btn' data-help='When the target is lost, should the camera pan back and forth searching for it?'>?</button></span><select id='scan_when_lost'><option value='true'>Yes</option><option value='false'>No</option></select></div>
+    <div><span>Pan Scan Step <button class='help-btn' data-help='Degrees to move the pan servo per step during the search sweep. Larger values sweep faster but may miss targets.'>?</button></span><input id='scan_step' type='number' step='1'></div>
+    <div><span>Tilt Scan Step <button class='help-btn' data-help='Degrees to move the tilt servo per step during the search sweep. Set to 0 to disable tilt sweeping (pan only).'>?</button></span><input id='scan_tilt_step' type='number' step='1'></div>
+    <div><span>Invert X Error <button class='help-btn' data-help='Flip the horizontal error direction. Use this if the camera is mounted upside-down or the pan servo moves the wrong way.'>?</button></span><select id='invert_error_x'><option value='false'>No</option><option value='true'>Yes</option></select></div>
+    <div><span>Invert Y Error <button class='help-btn' data-help='Flip the vertical error direction. Use this if the camera is mounted upside-down or the tilt servo moves the wrong way.'>?</button></span><select id='invert_error_y'><option value='false'>No</option><option value='true'>Yes</option></select></div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Overlay Options</h3></div>
+  <div class='status-grid'>
+    <div><span>Show Labels <button class='help-btn' data-help='Show the detection label (e.g. "face", "person") and confidence score above each bounding box.'>?</button></span><select id='show_labels'><option value='true'>Yes</option><option value='false'>No</option></select></div>
+    <div><span>Show Crosshair <button class='help-btn' data-help='Draw a small crosshair at the center of the video frame. Useful for alignment and tuning.'>?</button></span><select id='show_crosshair'><option value='true'>Yes</option><option value='false'>No</option></select></div>
+    <div><span>Show Metrics Overlay <button class='help-btn' data-help='Render a status text line at the bottom of the video with FPS, detection count, servo angles, and tracking state.'>?</button></span><select id='show_metrics_overlay'><option value='true'>Yes</option><option value='false'>No</option></select></div>
+    <div><span>Show Confidence Bar <button class='help-btn' data-help='Draw a small filled bar below the target bounding box showing its detection confidence level.'>?</button></span><select id='show_confidence_bar'><option value='true'>Yes</option><option value='false'>No</option></select></div>
+    <div><span>Box Padding <button class='help-btn' data-help='Extra pixels to expand bounding boxes outward in the overlay. Useful for making tight boxes easier to see.'>?</button></span><input id='box_padding_px' type='number' min='0' step='1'></div>
+  </div>
+  <div class='button-grid'>
+    <button id='save-config' class='primary'>Save Tracking Config</button>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Manual Servo Lab</h3></div>
+  <div class='status-grid'>
+    <div><span>Logical pan</span><strong id='logical-pan-readout'>--</strong></div>
+    <div><span>Logical tilt</span><strong id='logical-tilt-readout'>--</strong></div>
+    <div><span>Physical pan</span><strong id='physical-pan-readout'>--</strong></div>
+    <div><span>Physical tilt</span><strong id='physical-tilt-readout'>--</strong></div>
+  </div>
+  <div class='status-grid'>
+    <div><span>Pan</span><input id='manual_pan' type='range' min='0' max='180' step='1'></div>
+    <div><span>Tilt</span><input id='manual_tilt' type='range' min='0' max='180' step='1'></div>
+    <div><span>Pan Trim</span><input id='pan_trim' type='number' min='-30' max='30' step='1'></div>
+    <div><span>Tilt Trim</span><input id='tilt_trim' type='number' min='-30' max='30' step='1'></div>
+  </div>
+  <div class='button-grid'>
+    <button data-nudge='left'>Pan Left</button>
+    <button data-nudge='right'>Pan Right</button>
+    <button data-nudge='up'>Tilt Up</button>
+    <button data-nudge='down'>Tilt Down</button>
+  </div>
+  <div class='button-grid'>
+    <button id='apply-servo' class='primary'>Apply Servo Position / Trim</button>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Console</h3></div>
+  <pre id='console' style='margin:0; min-height:180px; max-height:280px; overflow:auto; background:#0b1116; color:#9fffe7; border:1px solid var(--border); border-radius:10px; padding:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:0.85rem; white-space:pre-wrap;'></pre>
+</section>
+
+<style>
+.help-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; font-size:0.6rem; font-weight:700;
+  border-radius:50%; border:1px solid rgba(0,255,204,0.4);
+  background:rgba(0,255,204,0.08); color:var(--accent);
+  cursor:pointer; margin-left:4px; vertical-align:middle;
+  padding:0; line-height:1; flex-shrink:0;
+  transition:background 0.15s, border-color 0.15s;
+}
+.help-btn:hover {
+  background:rgba(0,255,204,0.22); border-color:rgba(0,255,204,0.7);
+}
+</style>
+{% endblock %}

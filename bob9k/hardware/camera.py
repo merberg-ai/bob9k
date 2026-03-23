@@ -111,6 +111,37 @@ class CameraWrapper:
                 self.logger.warning('Camera frame capture failed: %s', exc)
                 return b''
 
+
+    def read_bgr(self):
+        if not self.running or self.picam2 is None:
+            return None
+        with self._lock:
+            if not self.running or self.picam2 is None:
+                return None
+            try:
+                frame = self.picam2.capture_array()
+                if frame is None:
+                    return None
+                try:
+                    import cv2
+                    return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                except Exception:
+                    return frame
+            except Exception as exc:
+                self.last_error = str(exc)
+                self.logger.warning('Camera BGR capture failed: %s', exc)
+                return None
+
+    def encode_jpeg(self, frame_bgr) -> bytes:
+        try:
+            import cv2
+            ok, buf = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return buf.tobytes() if ok else b''
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.logger.warning('Camera JPEG encode failed: %s', exc)
+            return b''
+
     def get_settings(self) -> dict[str, Any]:
         return dict(self.current_settings)
 
@@ -244,7 +275,14 @@ class CameraWrapper:
         except Exception:
             return None
 
-    def mjpeg_generator(self):
+    def mjpeg_generator(self, runtime=None):
+        try:
+            import cv2 as _cv2
+            import numpy as _np
+            _cv_ok = True
+        except ImportError:
+            _cv_ok = False
+
         while True:
             if not self.running or self.picam2 is None:
                 time.sleep(0.1)
@@ -252,6 +290,37 @@ class CameraWrapper:
 
             frame = self.get_frame()
             if frame:
+                # Draw tracking overlay if enabled and a detected box exists
+                if _cv_ok and runtime is not None:
+                    state = runtime.state
+                    box = getattr(state, 'tracking_box', None)
+                    if getattr(state, 'tracking_enabled', False) and box is not None:
+                        try:
+                            np_arr = _np.frombuffer(frame, _np.uint8)
+                            img = _cv2.imdecode(np_arr, _cv2.IMREAD_COLOR)
+                            if img is not None:
+                                x, y, w, h = box
+                                detector = getattr(state, 'tracking_detector', '')
+                                label_map = {
+                                    'haar_face': 'Face',
+                                    'haar_body': 'Body',
+                                    'motion': 'Motion',
+                                }
+                                label = label_map.get(detector, 'Target')
+                                # Cyan bounding box + label
+                                _cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 204), 2)
+                                _cv2.putText(
+                                    img, label,
+                                    (x, max(y - 8, 12)),
+                                    _cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                                    (0, 255, 204), 2, _cv2.LINE_AA,
+                                )
+                                ok, buf = _cv2.imencode('.jpg', img, [_cv2.IMWRITE_JPEG_QUALITY, 85])
+                                if ok:
+                                    frame = buf.tobytes()
+                        except Exception:
+                            pass  # never crash the stream on overlay failure
+
                 yield (
                     b'--frame\r\n'
                     b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'

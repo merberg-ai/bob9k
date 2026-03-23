@@ -3,6 +3,19 @@
 {% block content %}
 <div style="display:flex; flex-direction:column; gap:14px;">
 
+  <!-- Power Management -->
+  <div class="card" id="gamepad-power-card">
+    <div class="card-header">Power Management</div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Gamepad & Bluetooth services</span>
+      <select id="gamepad-enable-select" onchange="toggleGamepadService()" style="width: auto; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--border);">
+        <option value="true">Enabled</option>
+        <option value="false" style="color: #ff6688;">Disabled (Radio Off)</option>
+      </select>
+    </div>
+    <p class="muted" style="font-size:0.85rem; margin-top:12px; margin-bottom:0;">Disabling this stops the gamepad background watcher and physically powers off the Bluetooth radio (`rfkill block bluetooth`) to conserve battery on the Pi5.</p>
+  </div>
+
   <!-- Connection Status + Quick Links -->
   <div class="card" id="gamepad-status-card">
     <div class="card-header">
@@ -144,7 +157,27 @@
     setTimeout(pollGamepadStatus, 2500);
   }
 
+  async function fetchGamepadServiceStatus() {
+    try {
+        const pwr = await fetch('/api/bluetooth/service_status').then(r => r.json());
+        const sel = document.getElementById('gamepad-enable-select');
+        if (sel) sel.value = pwr.gamepad_enabled ? "true" : "false";
+    } catch(e) {}
+  }
+
+  async function toggleGamepadService() {
+      const sel = document.getElementById('gamepad-enable-select');
+      const enabled = sel.value === "true";
+      await fetch('/api/bluetooth/toggle_service', {
+          method: 'POST',
+          body: JSON.stringify({enabled}),
+          headers: {'Content-Type': 'application/json'}
+      });
+      alert(enabled ? "Gamepad and Bluetooth services enabled. Scanning resumed." : "Gamepad and Bluetooth disabled. Bluetooth radio powered off.");
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    fetchGamepadServiceStatus();
     pollingLogs = true;
     pollBluetoothLogs();
     pollGamepadStatus();

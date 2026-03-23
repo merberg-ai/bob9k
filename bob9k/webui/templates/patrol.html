@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div id="help-tooltip" style="
+  display:none; position:fixed; z-index:9999;
+  background:#1a2535; color:#cee8ff; border:1px solid rgba(0,255,204,0.35);
+  border-radius:8px; padding:8px 12px; max-width:280px; font-size:0.8rem;
+  line-height:1.4; box-shadow:0 4px 18px rgba(0,0,0,0.6);
+  pointer-events:none;
+"></div>
+
+<section class='card'>
+  <div class='card-header'>
+    <div>
+      <div class='muted' style='font-size:0.8rem; text-transform:uppercase; letter-spacing:0.08em;'>bob9k autonomy</div>
+      <h2 style='margin:4px 0 6px;'>Patrol Mode</h2>
+      <p class='muted' style='margin:0;'>Autonomous roaming, scanning, and object detection.</p>
+    </div>
+    <div style='display:flex; gap:10px; align-items:center; flex-wrap:wrap;'>
+      <div class='status-pill' id='status-pill-local'>Idle</div>
+      <button id='toggle-patrol' class='primary'>Enable Patrol</button>
+    </div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'>
+    <h3 style='margin:0;'>Live Preview</h3>
+    <div class='muted' style='display:flex; gap:14px; flex-wrap:wrap; font-size:0.9rem;'>
+      <span id='detect-count'>Total Detections: 0</span>
+    </div>
+  </div>
+  <img id='preview' class='camera-stream' src='/video_feed' alt='Live preview'>
+  <div class='status-grid' style='margin-top:12px;'>
+    <div><span>Drive State</span><strong id='drive-state-stat'>--</strong></div>
+    <div><span>Drive Speed</span><strong id='speed-stat'>--</strong></div>
+    <div><span>Last Detected</span><strong id='last-detect-stat'>None</strong></div>
+    <div><span>Avoidance Distance (cm)</span><strong id='avoid-dist-stat'>--</strong></div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Patrol Configuration</h3></div>
+  <div class='status-grid'>
+    <div><span>Drive Speed % <button class='help-btn' data-help='Speed the robot moves forward during patrol. (0-100)'>?</button></span>
+      <input id='speed' type='number' min='0' max='100' step='1'>
+    </div>
+    <div><span>Avoidance Distance (cm) <button class='help-btn' data-help='Distance threshold for ultrasonic sensor. Robot stops and turns if an obstacle is closer than this.'>?</button></span>
+      <input id='avoidance_distance_cm' type='number' min='10' max='200' step='1'>
+    </div>
+    <div><span>Target Classes <button class='help-btn' data-help='Comma-separated list of objects to detect (e.g. person, dog, cat). Leave empty to detect any object.'>?</button></span>
+      <input id='targets' type='text' placeholder='person,dog,cat'>
+    </div>
+    <div><span>Detection Behavior <button class='help-btn' data-help='What to do when a target is detected: Log and keep patrolling, or Switch to Tracking Follow mode.'>?</button></span>
+      <select id='detection_behavior'>
+        <option value='log'>Log and Keep Patrolling</option>
+        <option value='follow'>Switch to Follow Mode</option>
+      </select>
+    </div>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Camera Scanning</h3></div>
+  <div class='status-grid'>
+    <div><span>Pan Min Angle <button class='help-btn' data-help='Left-most angle for the camera pan sweep.'>?</button></span><input id='scan_pan_min' type='number' min='0' max='180' step='1'></div>
+    <div><span>Pan Max Angle <button class='help-btn' data-help='Right-most angle for the camera pan sweep.'>?</button></span><input id='scan_pan_max' type='number' min='0' max='180' step='1'></div>
+    <div><span>Pan Step <button class='help-btn' data-help='Degrees to move pan per tick. Larger = faster sweep.'>?</button></span><input id='scan_step' type='number' min='1' max='20' step='1'></div>
+    <div><span>Tilt Angle <button class='help-btn' data-help='Fixed vertical tilt angle during patrol.'>?</button></span><input id='scan_tilt_angle' type='number' min='0' max='180' step='1'></div>
+  </div>
+  <div class='button-grid' style='margin-top:16px;'>
+    <button id='save-config' class='primary'>Save Patrol Settings</button>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Quick Actions</h3></div>
+  <div class='button-grid'>
+    <button id='clear-console'>Clear Log</button>
+  </div>
+</section>
+
+<section class='card'>
+  <div class='card-header'><h3 style='margin:0;'>Console</h3></div>
+  <pre id='console' style='margin:0; min-height:180px; max-height:280px; overflow:auto; background:#0b1116; color:#9fffe7; border:1px solid var(--border); border-radius:10px; padding:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:0.85rem; white-space:pre-wrap;'></pre>
+</section>
+
+<style>
+.help-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; font-size:0.6rem; font-weight:700;
+  border-radius:50%; border:1px solid rgba(0,255,204,0.4);
+  background:rgba(0,255,204,0.08); color:var(--accent);
+  cursor:pointer; margin-left:4px; vertical-align:middle;
+  padding:0; line-height:1; flex-shrink:0;
+  transition:background 0.15s, border-color 0.15s;
+}
+.help-btn:hover {
+  background:rgba(0,255,204,0.22); border-color:rgba(0,255,204,0.7);
+}
+</style>
+{% endblock %}

@@ -84,7 +84,25 @@ class TelemetryService:
             'led_state': state.led_state,
             'led_custom': state.led_custom,
             'mode': state.mode,
+            'tracking_enabled': state.tracking_enabled,
+            'tracking': {
+                'enabled': state.tracking_enabled,
+                'mode': state.tracking_mode,
+                'detector': state.tracking_detector,
+                'detector_status': state.tracking_detector_status,
+                'detector_available': state.tracking_detector_available,
+                'target_acquired': state.tracking_target_acquired,
+                'target_box': state.tracking_box,
+                'target_label': state.tracking_target_label,
+                'target_confidence': state.tracking_target_confidence,
+                'scan_active': state.tracking_scan_active,
+                'frame_size': state.tracking_frame_size,
+                'fps_actual': state.tracking_fps_actual,
+                'metrics': state.tracking_metrics,
+                'disable_reason': state.tracking_disable_reason,
+            },
             'gamepad_connected': bool(getattr(self.runtime, 'gamepad', None) and getattr(self.runtime.gamepad, 'device', None) is not None),
+
         }
         state.telemetry = snapshot
         return snapshot

@@ -9,3 +9,9 @@ adafruit-blinka>=8.0.0
 evdev>=1.7.0
 
 pexpect>=4.8.0
+opencv-python-headless
+numpy
+
+psutil>=5.9.0
+
+ultralytics>=8.0.0

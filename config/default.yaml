@@ -130,3 +130,56 @@ camera:
   exposure_compensation: 0.0
   manual_red_gain: null
   manual_blue_gain: null
+
+
+tracking:
+  enabled: false
+  mode: camera_track
+  detector: face
+  target_label: ''
+  yolo_model: yolov8n.pt
+  enable_yolo: false
+  yolo_imgsz: 320
+  yolo_classes: []
+  confidence_min: 0.45
+  max_results: 20
+  min_area: 1500
+  min_target_area: 900
+  pan_gain: 0.06
+  tilt_gain: 0.06
+  x_deadzone_px: 48
+  y_deadzone_px: 36
+  smoothing_alpha: 0.4
+  scan_when_lost: true
+  scan_step: 2
+  scan_tilt_step: 0
+  lost_timeout_s: 1.5
+  process_every_n_frames: 3
+  box_padding_px: 8
+  show_labels: true
+  show_crosshair: true
+  show_metrics_overlay: true
+  preferred_target: largest
+  servo_idle_hold_s: 0.35
+  invert_error_x: false
+  invert_error_y: false
+  jpeg_every_n_frames: 2
+  idle_sleep_s: 0.02
+  stats_log_interval_s: 10.0
+  overlay_enabled: true
+  follow_reverse_enabled: true
+  follow_target_lock_iou_min: 0.12
+  follow_target_lock_center_px: 160
+  follow_target_switch_margin: 1.2
+  follow_distance_hysteresis_cm: 6
+  follow_image_size_hysteresis: 0.025
+  follow_distance_smoothing_alpha: 0.35
+  follow_steer_smoothing_alpha: 0.45
+  follow_min_drive_update_s: 0.2
+  follow_steer_max_step_deg: 8
+  follow_steer_deadzone_px: 36
+  follow_image_steer_weight: 0.7
+  follow_pan_steer_weight: 0.3
+  follow_pan_steer_smoothing_alpha: 0.2
+  follow_steer_jitter_deg: 2
+
