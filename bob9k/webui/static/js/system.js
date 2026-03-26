@@ -32,6 +32,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       msgEl.textContent = `Last commit: ${v.git_commit_message}`;
       msgEl.style.display = '';
     }
+
+    const overrideToggle = document.getElementById('battery-override-toggle');
+    if (overrideToggle) {
+      overrideToggle.checked = !!data.battery_override;
+    }
   } catch (err) {
     console.warn('system info load failed:', err);
   }

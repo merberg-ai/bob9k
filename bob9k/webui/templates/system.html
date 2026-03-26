@@ -26,6 +26,48 @@
     <p id='ver-message' class='muted' style="margin:8px 0 0; font-size:0.82rem; font-family:monospace; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; display:none;"></p>
   </section>
 
+  <section class='card border-warning'>
+    <div class="card-header" style="color:#ffaa00;">Safety Overrides</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:20px; padding-top:8px;">
+      <div>
+        <strong style="display:block;">Disable Low Battery Lockout</strong>
+        <p class="muted" style="margin:4px 0 0; font-size:0.85rem;">
+          <strong>Danger:</strong> For testing only. Disabling the automatic shutdown when the ROBOT HAT battery is low might cause erratic behavior or crash the Pi if not powered by a separate power bank.
+        </p>
+      </div>
+      <div>
+        <label class="switch">
+          <input type="checkbox" id="battery-override-toggle" onchange="toggleBatteryOverride(this.checked)">
+          <span class="slider round"></span>
+        </label>
+      </div>
+    </div>
+    <script>
+      async function toggleBatteryOverride(enabled) {
+          if (enabled) {
+              if (!confirm("WARNING: Disabling low battery lockout can cause the Pi to crash if it does not have an external power source. Are you sure?")) {
+                  document.getElementById('battery-override-toggle').checked = false;
+                  return;
+              }
+          }
+          try {
+              const res = await fetch('/api/system/battery_override', {
+                  method: 'POST',
+                  body: JSON.stringify({ override: enabled })
+              });
+              const data = await res.json();
+              if (!data.ok) {
+                  alert("Failed to save setting.");
+                  document.getElementById('battery-override-toggle').checked = !enabled;
+              }
+          } catch(e) {
+              alert("Error saving setting: " + e);
+              document.getElementById('battery-override-toggle').checked = !enabled;
+          }
+      }
+    </script>
+  </section>
+
   <section class='card border-danger'>
     <div class="card-header" style="color:#ff6688;">System Operations</div>
     <p class="muted">Warning: Rebooting the system will momentarily cut the connection. Shutting down the system will permanently cut the connection until you manually power cycle the rover hardware.</p>

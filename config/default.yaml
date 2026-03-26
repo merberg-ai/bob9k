@@ -92,6 +92,7 @@ battery:
   sample_delay_s: 0.01
   offset: 0.0
   full_voltage: 8.4
+  disable_low_battery_lockout: false
 telemetry:
   poll_interval_s: 2.0
 switches:

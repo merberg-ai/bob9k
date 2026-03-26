@@ -48,7 +48,8 @@ class TelemetryService:
         state.tilt_angle = tilt_angle
 
         if reg.motors:
-            reg.motors.set_lockout(battery_status == 'critical', reason='battery critical')
+            disable_lockout = self.runtime.config.get('battery', {}).get('disable_low_battery_lockout', False)
+            reg.motors.set_lockout(battery_status == 'critical' and not disable_lockout, reason='battery critical')
             state.motor_state = reg.motors.state
             state.speed = reg.motors.speed
             state.motion_locked = reg.motors.motion_locked
