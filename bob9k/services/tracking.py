@@ -261,12 +261,24 @@ class TrackingService:
 
     def update_config(self, patch: dict, persist: bool = True):
         merged = dict(self._config)
+        was_enabled = bool(self._config.get('enabled', False))
         merged.update(patch or {})
         self._config = self._normalize(merged)
         self._tracker.apply_config(self._config)
         self.runtime.config['tracking'] = dict(self._config)
         self._detector = build_detector(self._config.get('detector', 'face'), self._config)
         self._sync_state_basics()
+        
+        # Enforce mutual exclusivity: if tracking was just enabled, override patrol
+        is_enabled = bool(self._config.get('enabled', False))
+        if is_enabled and not was_enabled:
+            patrol = getattr(self.runtime, 'patrol', None)
+            if patrol and self.runtime.state.patrol_enabled:
+                try:
+                    patrol.disable(reason='tracking_override')
+                except Exception as e:
+                    self.logger.error(f"Failed to override patrol mode: {e}")
+                    
         if persist:
             runtime_cfg = load_runtime_config()
             runtime_cfg['tracking'] = dict(self._config)
@@ -274,11 +286,21 @@ class TrackingService:
         return dict(self._config), []
 
     def set_enabled(self, enabled: bool, persist: bool = False):
+        was_enabled = bool(self._config.get('enabled', False))
         self._config['enabled'] = bool(enabled)
         self.runtime.config['tracking'] = dict(self._config)
         self.runtime.state.tracking_enabled = bool(enabled)
         self.runtime.state.tracking_scan_active = False
         self.runtime.state.tracking_disable_reason = None if enabled else self.runtime.state.tracking_disable_reason
+        
+        if enabled and not was_enabled:
+            patrol = getattr(self.runtime, 'patrol', None)
+            if patrol and self.runtime.state.patrol_enabled:
+                try:
+                    patrol.disable(reason='tracking_override')
+                except Exception as e:
+                    self.logger.error(f"Failed to override patrol mode: {e}")
+                    
         if persist:
             runtime_cfg = load_runtime_config()
             runtime_cfg['tracking'] = dict(self._config)
